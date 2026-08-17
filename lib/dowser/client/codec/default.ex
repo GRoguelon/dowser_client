@@ -1,4 +1,4 @@
-defmodule Dowser.Client.Codecs.DefaultCodec do
+defmodule Dowser.Client.Codec.Default do
   @moduledoc """
   The built-in, backend-agnostic `Dowser.Client.Codec`.
 
@@ -11,7 +11,6 @@ defmodule Dowser.Client.Codecs.DefaultCodec do
   `encode/2` does no casting of its own — `dowser_client` has no
   backend-specific value-casting knowledge; see `Dowser.Client.Codec`.
   """
-  @moduledoc deprecated: "Use Dowser.Client.Codecs.Default instead."
 
   alias Dowser.CoreExt.Keyable
 

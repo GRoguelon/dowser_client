@@ -1,13 +1,13 @@
-defmodule Dowser.Client.CodecBuilderTest do
+defmodule Dowser.Client.Codec.BuilderTest do
   use ExUnit.Case, async: true
 
-  alias Dowser.Client.CodecBuilderFixtures.BaseCodec
-  alias Dowser.Client.CodecBuilderFixtures.ChildCodec
-  alias Dowser.Client.CodecBuilderFixtures.DateField
-  alias Dowser.Client.CodecBuilderFixtures.EchoCodec
-  alias Dowser.Client.CodecBuilderFixtures.IpField
-  alias Dowser.Client.CodecBuilderFixtures.NoFallbackNoNilCodec
-  alias Dowser.Client.CodecBuilderFixtures.OverlapChildCodec
+  alias Dowser.Client.Codec.BuilderFixtures.BaseCodec
+  alias Dowser.Client.Codec.BuilderFixtures.ChildCodec
+  alias Dowser.Client.Codec.BuilderFixtures.DateField
+  alias Dowser.Client.Codec.BuilderFixtures.EchoCodec
+  alias Dowser.Client.Codec.BuilderFixtures.IpField
+  alias Dowser.Client.Codec.BuilderFixtures.NoFallbackNoNilCodec
+  alias Dowser.Client.Codec.BuilderFixtures.OverlapChildCodec
 
   describe "cast/2 dispatch" do
     test "load/2 dispatches to the matching field module" do

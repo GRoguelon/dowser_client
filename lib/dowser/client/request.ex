@@ -42,13 +42,13 @@ defmodule Dowser.Client.Request do
       response body's keys are cast. Falls back to the config's `:keys`, then
       `config :dowser_client, :keys`, then `:strings`. Resolved into a
       `:key_fn` function and passed to `:codec_adapter` via `:codec_opts` —
-      the default `Dowser.Client.Codecs.DefaultCodec` applies it; a custom
+      the default `Dowser.Client.Codec.Default` applies it; a custom
       `:codec_adapter` is responsible for applying it itself if it wants the
       same behavior.
     * `:codec_adapter` — a module implementing `Dowser.Client.Codec`, falling
       back to the config's `:codec_adapter`, then
       `config :dowser_client, :codec_adapter`, then
-      `Dowser.Client.Codecs.DefaultCodec` (`dowser_client` has no
+      `Dowser.Client.Codec.Default` (`dowser_client` has no
       backend-specific knowledge of its own beyond that). When set,
       `codec_adapter.decode/2` casts the response body in one pass, and
       `codec_adapter.encode/2` casts the request body before JSON encoding.
@@ -59,7 +59,7 @@ defmodule Dowser.Client.Request do
   """
 
   alias Dowser.Client.Codec.Error, as: CodecError
-  alias Dowser.Client.Codecs.DefaultCodec
+  alias Dowser.Client.Codec.Default, as: DefaultCodec
   alias Dowser.Client.Error
   alias Dowser.Client.Headers
   alias Dowser.Client.JSON.Error, as: JSONError

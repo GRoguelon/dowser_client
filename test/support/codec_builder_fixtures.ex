@@ -1,4 +1,4 @@
-defmodule Dowser.Client.CodecBuilderFixtures.DateField do
+defmodule Dowser.Client.Codec.BuilderFixtures.DateField do
   @moduledoc false
   @behaviour Dowser.Client.Field
 
@@ -18,7 +18,7 @@ defmodule Dowser.Client.CodecBuilderFixtures.DateField do
   def dump(value, _field), do: value
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.IpField do
+defmodule Dowser.Client.Codec.BuilderFixtures.IpField do
   @moduledoc false
   @behaviour Dowser.Client.Field
 
@@ -29,28 +29,28 @@ defmodule Dowser.Client.CodecBuilderFixtures.IpField do
   def dump({:ip, value}, _field), do: value
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.BaseCodec do
+defmodule Dowser.Client.Codec.BuilderFixtures.BaseCodec do
   @moduledoc false
-  use Dowser.Client.CodecBuilder
+  use Dowser.Client.Codec.Builder
 
-  cast %{"type" => "date"}, Dowser.Client.CodecBuilderFixtures.DateField
+  cast %{"type" => "date"}, Dowser.Client.Codec.BuilderFixtures.DateField
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.ChildCodec do
+defmodule Dowser.Client.Codec.BuilderFixtures.ChildCodec do
   @moduledoc false
-  use Dowser.Client.CodecBuilder, inherit: Dowser.Client.CodecBuilderFixtures.BaseCodec
+  use Dowser.Client.Codec.Builder, inherit: Dowser.Client.Codec.BuilderFixtures.BaseCodec
 
-  cast %{"type" => "ip"}, Dowser.Client.CodecBuilderFixtures.IpField
+  cast %{"type" => "ip"}, Dowser.Client.Codec.BuilderFixtures.IpField
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.NoFallbackNoNilCodec do
+defmodule Dowser.Client.Codec.BuilderFixtures.NoFallbackNoNilCodec do
   @moduledoc false
-  use Dowser.Client.CodecBuilder, fallback: false, nil: false
+  use Dowser.Client.Codec.Builder, fallback: false, nil: false
 
-  cast %{"type" => "ip"}, Dowser.Client.CodecBuilderFixtures.IpField
+  cast %{"type" => "ip"}, Dowser.Client.Codec.BuilderFixtures.IpField
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.FieldA do
+defmodule Dowser.Client.Codec.BuilderFixtures.FieldA do
   @moduledoc false
   @behaviour Dowser.Client.Field
 
@@ -61,7 +61,7 @@ defmodule Dowser.Client.CodecBuilderFixtures.FieldA do
   def dump({:a, value}, _field), do: value
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.FieldB do
+defmodule Dowser.Client.Codec.BuilderFixtures.FieldB do
   @moduledoc false
   @behaviour Dowser.Client.Field
 
@@ -72,7 +72,7 @@ defmodule Dowser.Client.CodecBuilderFixtures.FieldB do
   def dump({:b, value}, _field), do: value
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.EchoField do
+defmodule Dowser.Client.Codec.BuilderFixtures.EchoField do
   @moduledoc false
   @behaviour Dowser.Client.Field
 
@@ -83,28 +83,29 @@ defmodule Dowser.Client.CodecBuilderFixtures.EchoField do
   def dump(value, field), do: {value, field}
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.EchoCodec do
+defmodule Dowser.Client.Codec.BuilderFixtures.EchoCodec do
   @moduledoc false
-  use Dowser.Client.CodecBuilder
+  use Dowser.Client.Codec.Builder
 
-  cast %{"type" => "echo"}, Dowser.Client.CodecBuilderFixtures.EchoField
+  cast %{"type" => "echo"}, Dowser.Client.Codec.BuilderFixtures.EchoField
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.OverlapParentCodec do
+defmodule Dowser.Client.Codec.BuilderFixtures.OverlapParentCodec do
   @moduledoc false
-  use Dowser.Client.CodecBuilder
+  use Dowser.Client.Codec.Builder
 
   # Broader pattern than the child's — matches any "date" field, whatever
   # else is on it.
-  cast %{"type" => "date"}, Dowser.Client.CodecBuilderFixtures.FieldA
+  cast %{"type" => "date"}, Dowser.Client.Codec.BuilderFixtures.FieldA
 end
 
-defmodule Dowser.Client.CodecBuilderFixtures.OverlapChildCodec do
+defmodule Dowser.Client.Codec.BuilderFixtures.OverlapChildCodec do
   @moduledoc false
-  use Dowser.Client.CodecBuilder, inherit: Dowser.Client.CodecBuilderFixtures.OverlapParentCodec
+  use Dowser.Client.Codec.Builder,
+    inherit: Dowser.Client.Codec.BuilderFixtures.OverlapParentCodec
 
   # Narrower than the inherited pattern above — matched values are a strict
   # subset of what the parent already matches, so the parent's clause (tried
   # first) always wins.
-  cast %{"type" => "date", "narrow" => true}, Dowser.Client.CodecBuilderFixtures.FieldB
+  cast %{"type" => "date", "narrow" => true}, Dowser.Client.Codec.BuilderFixtures.FieldB
 end

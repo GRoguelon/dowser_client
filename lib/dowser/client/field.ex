@@ -20,7 +20,7 @@ defmodule Dowser.Client.Field do
   `dowser_client` ships only this behaviour, not any implementation — it has
   no knowledge of any particular backend's field types. A backend package
   (e.g. `dowser_elasticsearch`) implements one module per field type and
-  wires them together with `Dowser.Client.CodecBuilder`, which assembles a
+  wires them together with `Dowser.Client.Codec.Builder`, which assembles a
   `load/2`/`dump/2` dispatcher from them — see its moduledoc for how that
   dispatcher is then wired into a `Dowser.Client.Codec` as `:codec_adapter`.
 

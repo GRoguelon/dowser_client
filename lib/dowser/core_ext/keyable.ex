@@ -1,4 +1,6 @@
 defprotocol Dowser.CoreExt.Keyable do
+  @moduledoc false
+
   @fallback_to_any true
   def transform_keys(value, key_fn)
 end

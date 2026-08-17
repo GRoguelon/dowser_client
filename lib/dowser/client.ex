@@ -39,7 +39,7 @@ defmodule Dowser.Client do
     * `:codec_adapter` — a module implementing `Dowser.Client.Codec`, used to
       cast a decoded response body via `decode/2`, and a request body via
       `encode/2`, beyond plain JSON. Defaults to
-      `Dowser.Client.Codecs.DefaultCodec`, which only applies `:keys` casting
+      `Dowser.Client.Codec.Default`, which only applies `:keys` casting
       below; see `Dowser.Client.Codec` for the full contract.
     * `:codec_opts` — options forwarded to `:codec_adapter`'s `decode/2`/
       `encode/2` (e.g. an index mapping); default `[]`.
