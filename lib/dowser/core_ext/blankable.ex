@@ -11,7 +11,7 @@ defimpl Dowser.Blankable, for: Atom do
   end
 end
 
-defimpl Dowser.Blankable, for: [String, BitString] do
+defimpl Dowser.Blankable, for: BitString do
   def blank?(value) do
     String.trim(value) == ""
   end
