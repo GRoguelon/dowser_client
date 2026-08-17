@@ -146,7 +146,7 @@ defmodule Dowser.Client.ResponseTest do
       assert {:error,
               %CodecError{
                 operation: :decode,
-                codec: Dowser.Client.Codecs.DefaultCodec,
+                codec: Dowser.Client.Codec.Default,
                 reason: %ArgumentError{}
               }} =
                Response.decode(

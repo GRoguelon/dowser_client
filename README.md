@@ -83,19 +83,18 @@ two more options shape what happens after that, both of them settable on a
     casts a decoded body's *values* beyond plain JSON — dates, geo points,
     whatever a backend package knows about — via its `decode/2`, and a
     request body's values via `encode/2`. Defaults to
-    `Dowser.Client.Codecs.DefaultCodec`, which only applies `:keys` casting
+    `Dowser.Client.Codec.Default`, which only applies `:keys` casting
     (below) and otherwise passes values through unchanged — `dowser_client`
     has no backend-specific knowledge of its own beyond that. A backend
     package like `dowser_elasticsearch` ships its own `:codec_adapter`,
-    typically built with `Dowser.Client.CodecBuilder` plus a thin bridge —
+    typically built with `Dowser.Client.Codec.Builder` plus a thin bridge —
     see [Codecs](#codecs) below.
   * `:keys` — `:strings` (default), `:atoms` or `:atoms!`; how the decoded
     body's keys are cast, however deeply nested. This is resolved into a
     `:key_fn` function and forwarded to `:codec_adapter` via `:codec_opts`;
-    the default `DefaultCodec` applies it, so keys are cast out of the box.
+    the default `Dowser.Client.Codec.Default` applies it, so keys are cast out of the box.
     A *custom* `:codec_adapter` is responsible for calling `opts[:key_fn]`
-    itself (typically via `Dowser.CoreExt.Keyable.transform_keys/2`) if it
-    wants the same behavior. `:atoms!` uses `String.to_existing_atom/1`, so
+    itself, however deeply nested, if it wants the same behavior. `:atoms!` uses `String.to_existing_atom/1`, so
     an unrecognized key surfaces as a `Dowser.Client.Codec.Error` instead of
     silently growing the atom table.
 
@@ -112,7 +111,7 @@ its wire representation — `load/2` (wire → richer term) and `dump/2` (the
 reverse). `dowser_client` ships only the behaviour, no implementations; it
 has no backend-specific knowledge of its own.
 
-`Dowser.Client.CodecBuilder` builds a `load/2`/`dump/2` dispatcher from a
+`Dowser.Client.Codec.Builder` builds a `load/2`/`dump/2` dispatcher from a
 list of `Dowser.Client.Field` mappings, dispatching on a pattern matched
 against field metadata:
 
@@ -134,7 +133,7 @@ defmodule MyApp.Fields.Date do
 end
 
 defmodule MyApp.FieldCodec do
-  use Dowser.Client.CodecBuilder
+  use Dowser.Client.Codec.Builder
 
   cast %{"type" => "date"}, MyApp.Fields.Date
 end
@@ -142,7 +141,7 @@ end
 
 Each `cast/2` expands into a pattern-matched `load/2`/`dump/2` clause
 dispatching straight to the field module — no indirection at runtime. See
-the `Dowser.Client.CodecBuilder` moduledoc for the `:inherit`, `:fallback`
+the `Dowser.Client.Codec.Builder` moduledoc for the `:inherit`, `:fallback`
 and `:nil` options.
 
 A `CodecBuilder`-built module implements `Dowser.Client.Field`'s per-*value*
@@ -152,7 +151,7 @@ against its own mapping/schema, which is inherently backend-specific
 knowledge `dowser_client` doesn't have, so a backend package writes a thin
 `Dowser.Client.Codec` that does the walk itself and dispatches into the
 `CodecBuilder`-built module's `load/2`/`dump/2` per field — see the
-`Dowser.Client.CodecBuilder` moduledoc for a worked example.
+`Dowser.Client.Codec.Builder` moduledoc for a worked example.
 
 ### Adapters
 
@@ -193,7 +192,7 @@ the adapter set on the `Dowser.Client.Config`, else
 `config :dowser_client, :http_adapter` / `:json_adapter` / `:codec_adapter`
 (read at request time, so it can be changed at runtime — e.g. in
 `config/runtime.exs` — not just at compile time), else the built-in
-`Httpc`/`Native`/`DefaultCodec` defaults. This means a backend package like
+`Httpc`/`Native`/`Dowser.Client.Codec.Default` defaults. This means a backend package like
 `dowser_elasticsearch` can work out of the box with no extra dependencies,
 while an application that already uses `Req` and `Jason` can switch to them
 with a one-line config change — no code changes anywhere that calls

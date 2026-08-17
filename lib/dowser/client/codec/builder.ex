@@ -1,9 +1,9 @@
-defmodule Dowser.Client.CodecBuilder do
+defmodule Dowser.Client.Codec.Builder do
   @moduledoc """
   Builds a `load/2` + `dump/2` dispatcher from a list of `Dowser.Client.Field`
   mappings.
 
-  `use Dowser.Client.CodecBuilder` turns a module into a `Dowser.Client.Field`-
+  `use Dowser.Client.Codec.Builder` turns a module into a `Dowser.Client.Field`-
   shaped dispatcher: it exposes a `cast/2` macro to declare, for a pattern
   matched against the second argument (typically field metadata), which
   `Dowser.Client.Field` module handles it. At compile time this expands into
@@ -39,7 +39,7 @@ defmodule Dowser.Client.CodecBuilder do
       end
 
       defmodule Dowser.Elasticsearch.FieldCodec do
-        use Dowser.Client.CodecBuilder
+        use Dowser.Client.Codec.Builder
 
         cast %{"type" => "date"}, Dowser.Elasticsearch.Fields.Date
       end
@@ -98,7 +98,7 @@ defmodule Dowser.Client.CodecBuilder do
 
   ## Options
 
-    * `:inherit` — a module built with `Dowser.Client.CodecBuilder` whose `cast/2`
+    * `:inherit` — a module built with `Dowser.Client.Codec.Builder` whose `cast/2`
       declarations are inserted ahead of this module's own. A pattern
       declared by the inherited module wins over one declared later for an
       overlapping match, since clauses are tried top to bottom. Default
@@ -117,7 +117,6 @@ defmodule Dowser.Client.CodecBuilder do
   in declaration order, then the fallback (if enabled). `load/2` clauses are
   emitted before `dump/2` clauses.
   """
-  @moduledoc deprecated: "Use Dowser.Client.Codecs.Builder instead."
 
   ## Module attributes
 
@@ -152,7 +151,7 @@ defmodule Dowser.Client.CodecBuilder do
     inherit = Macro.expand(Keyword.fetch!(opts, :inherit), __CALLER__)
 
     quote do
-      import Dowser.Client.CodecBuilder, only: [cast: 2]
+      import Dowser.Client.Codec.Builder, only: [cast: 2]
 
       @behaviour Dowser.Client.Field
 
@@ -161,7 +160,7 @@ defmodule Dowser.Client.CodecBuilder do
       @dowser_codec_fallback? unquote(Keyword.fetch!(opts, :fallback))
       @dowser_codec_nil? unquote(Keyword.fetch!(opts, nil))
 
-      @before_compile Dowser.Client.CodecBuilder
+      @before_compile Dowser.Client.Codec.Builder
     end
   end
 
@@ -192,7 +191,7 @@ defmodule Dowser.Client.CodecBuilder do
     unknown = Keyword.keys(opts) -- Keyword.keys(@default_opts)
 
     if unknown != [] do
-      raise ArgumentError, "unknown Dowser.Client.CodecBuilder option(s): #{inspect(unknown)}"
+      raise ArgumentError, "unknown Dowser.Client.Codec.Builder option(s): #{inspect(unknown)}"
     end
 
     Keyword.merge(@default_opts, opts)

@@ -205,7 +205,7 @@ defmodule Dowser.Client.RequestTest do
     test "DefaultCodec is not invoked on the request-encode path" do
       assert {:ok, request} =
                Request.new(config(), :post, "/", %{"a" => 1},
-                 codec_adapter: Dowser.Client.Codecs.DefaultCodec
+                 codec_adapter: Dowser.Client.Codec.Default
                )
 
       assert IO.iodata_to_binary(request.body) == ~s({"a":1})
@@ -268,7 +268,7 @@ defmodule Dowser.Client.RequestTest do
       assert {:ok, request} = Request.new(config(), :get, "/", nil, [])
       assert request.http_adapter == Dowser.Client.HTTP.Httpc
       assert request.json_adapter == Dowser.Client.JSON.Native
-      assert request.codec_adapter == Dowser.Client.Codecs.DefaultCodec
+      assert request.codec_adapter == Dowser.Client.Codec.Default
     end
 
     test "opts[:http_adapter] overrides the config adapter" do
@@ -418,7 +418,7 @@ defmodule Dowser.Client.RequestTest do
 
     test "codec_adapter defaults to DefaultCodec, not nil" do
       assert {:ok, request} = Request.new(config(), :get, "/", nil, [])
-      assert request.codec_adapter == Dowser.Client.Codecs.DefaultCodec
+      assert request.codec_adapter == Dowser.Client.Codec.Default
     end
 
     test "opts[:codec_adapter] falls back to the config's :codec_adapter" do
@@ -429,10 +429,10 @@ defmodule Dowser.Client.RequestTest do
     test "opts[:codec_adapter] overrides the config's :codec_adapter" do
       assert {:ok, request} =
                Request.new(config(codec_adapter: FakeCodec), :get, "/", nil,
-                 codec_adapter: Dowser.Client.Codecs.DefaultCodec
+                 codec_adapter: Dowser.Client.Codec.Default
                )
 
-      assert request.codec_adapter == Dowser.Client.Codecs.DefaultCodec
+      assert request.codec_adapter == Dowser.Client.Codec.Default
     end
 
     test "codec_opts defaults to just the automatically-added :key_fn and :config" do

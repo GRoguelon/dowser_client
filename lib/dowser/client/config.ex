@@ -25,7 +25,7 @@ defmodule Dowser.Client.Config do
   the struct itself; when unset, `Dowser.Client.Request` resolves them at
   request time from `config :dowser_client, :http_adapter | :json_adapter |
   :codec_adapter`, falling back to the built-in `Httpc`/`Native`/
-  `DefaultCodec` — so they can be changed at runtime (e.g. in
+  `Dowser.Client.Codec.Default` — so they can be changed at runtime (e.g. in
   `config/runtime.exs`), not just at compile time.
   """
 

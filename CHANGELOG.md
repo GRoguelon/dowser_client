@@ -53,14 +53,14 @@ Initial release.
   its wire representation (`load/2`/`dump/2`), for the backend-specific
   knowledge `dowser_client` doesn't have; backend packages like
   `dowser_elasticsearch` ship their own field implementations.
-- `Dowser.Client.CodecBuilder` — `use`-able macro that builds a `load/2`/
+- `Dowser.Client.Codec.Builder` — `use`-able macro that builds a `load/2`/
   `dump/2` dispatcher from a list of `Dowser.Client.Field` mappings declared
   with `cast/2`, pattern-matched against field metadata. Expands to plain
   pattern-matched function clauses at compile time, with `:inherit`,
   `:fallback` and `:nil` options.
 - `Dowser.Client.Codec` — a behaviour for casting a whole request/response
   body (`encode/2`/`decode/2`), wired onto a config/request as
-  `:codec_adapter`. `Dowser.Client.Codecs.DefaultCodec` is the built-in
+  `:codec_adapter`. `Dowser.Client.Codec.Default` is the built-in
   default, applying only `:keys` casting; a backend package composes its own
   `Codec` on top of a `CodecBuilder`-built dispatcher for per-field value
   casting (dates, geo points, ...), and `:codec_opts` (settable as a

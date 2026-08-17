@@ -1,7 +1,7 @@
-defmodule Dowser.Client.Codecs.DefaultCodecTest do
+defmodule Dowser.Client.Codec.Default do
   use ExUnit.Case, async: true
 
-  alias Dowser.Client.Codecs.DefaultCodec
+  alias Dowser.Client.Codec.Default, as: DefaultCodec
 
   describe "encode/2" do
     test "returns the value unchanged, regardless of opts" do
