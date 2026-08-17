@@ -4,9 +4,9 @@ defmodule Dowser.Client.Codec.Default do
 
   `decode/2` applies `opts[:key_fn]` (resolved from `:keys` by
   `Dowser.Client.Request`) to every key of the decoded body — recursively,
-  through maps, lists and `MapSet`s (an ndjson body decodes to a *list* of maps, so the
-  transform must recurse into it too, not just top-level maps). Any other
-  term (a scalar, `nil`, ...) passes through unchanged.
+  through maps, lists and `MapSet`s (an ndjson body decodes to a *list* of
+  maps, so the transform must recurse into it too, not just top-level maps).
+  Any other term (a scalar, `nil`, ...) passes through unchanged.
 
   `encode/2` does no casting of its own — `dowser_client` has no
   backend-specific value-casting knowledge; see `Dowser.Client.Codec`.

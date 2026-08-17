@@ -2,7 +2,7 @@ defmodule Dowser.Client.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_client"
-  @version "0.1.0"
+  @version "0.1.1"
 
   def project do
     [
@@ -38,7 +38,8 @@ defmodule Dowser.Client.MixProject do
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
-        "Changelog" => "https://dowser-client.hexdocs.pm/changelog.html"
+        "Changelog" => "https://dowser-client.hexdocs.pm/changelog.html",
+        "Dowser.Elasticsearch" => "https://hex.pm/packages/dowser_elasticsearch"
       }
     ]
   end
@@ -50,7 +51,35 @@ defmodule Dowser.Client.MixProject do
       extras: ["README.md", "CHANGELOG.md"],
       source_ref: "v#{@version}",
       source_url: @source_url,
-      skip_undefined_reference_warnings_on: ["CHANGELOG.md"]
+      skip_undefined_reference_warnings_on: ["CHANGELOG.md"],
+      groups_for_modules: [
+        "HTTP Adapters": [
+          Dowser.Client.HTTP.Adapter,
+          Dowser.Client.HTTP.Httpc,
+          Dowser.Client.HTTP.Req,
+          Dowser.Client.HTTP.Hackney,
+          Dowser.Client.HTTP.Stub
+        ],
+        "JSON Adapters": [
+          Dowser.Client.NDJSON,
+          Dowser.Client.JSON.Adapter,
+          Dowser.Client.JSON.Native,
+          Dowser.Client.JSON.Jason,
+          Dowser.Client.JSON.Poison
+        ],
+        "Codec Adapters": [
+          Dowser.Client.Codec,
+          Dowser.Client.Codec.Default,
+          Dowser.Client.Codec.Builder,
+          Dowser.Client.Field
+        ],
+        Errors: [
+          Dowser.Client.Error,
+          Dowser.Client.Codec.Error,
+          Dowser.Client.HTTP.Error,
+          Dowser.Client.JSON.Error
+        ]
+      ]
     ]
   end
 
