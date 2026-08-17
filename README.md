@@ -92,11 +92,12 @@ two more options shape what happens after that, both of them settable on a
   * `:keys` — `:strings` (default), `:atoms` or `:atoms!`; how the decoded
     body's keys are cast, however deeply nested. This is resolved into a
     `:key_fn` function and forwarded to `:codec_adapter` via `:codec_opts`;
-    the default `Dowser.Client.Codec.Default` applies it, so keys are cast out of the box.
-    A *custom* `:codec_adapter` is responsible for calling `opts[:key_fn]`
-    itself, however deeply nested, if it wants the same behavior. `:atoms!` uses `String.to_existing_atom/1`, so
-    an unrecognized key surfaces as a `Dowser.Client.Codec.Error` instead of
-    silently growing the atom table.
+    the default `Dowser.Client.Codec.Default` applies it, so keys are cast
+    out of the box. A *custom* `:codec_adapter` is responsible for calling
+    `opts[:key_fn]` itself, however deeply nested, if it wants the same
+    behavior. `:atoms!` uses `String.to_existing_atom/1`, so an unrecognized
+    key surfaces as a `Dowser.Client.Codec.Error` instead of silently growing
+    the atom table.
 
 ```elixir
 config = Dowser.Client.Config.new(endpoint: "...", codec_adapter: MyApp.Codec)
@@ -144,13 +145,13 @@ dispatching straight to the field module — no indirection at runtime. See
 the `Dowser.Client.Codec.Builder` moduledoc for the `:inherit`, `:fallback`
 and `:nil` options.
 
-A `CodecBuilder`-built module implements `Dowser.Client.Field`'s per-*value*
+A `Codec.Builder`-built module implements `Dowser.Client.Field`'s per-*value*
 contract, not `Dowser.Client.Codec`'s whole-*body* one — it can't be set
 directly as `:codec_adapter`. Bridging the two means walking a document
 against its own mapping/schema, which is inherently backend-specific
 knowledge `dowser_client` doesn't have, so a backend package writes a thin
 `Dowser.Client.Codec` that does the walk itself and dispatches into the
-`CodecBuilder`-built module's `load/2`/`dump/2` per field — see the
+`Codec.Builder`-built module's `load/2`/`dump/2` per field — see the
 `Dowser.Client.Codec.Builder` moduledoc for a worked example.
 
 ### Adapters
@@ -192,7 +193,7 @@ the adapter set on the `Dowser.Client.Config`, else
 `config :dowser_client, :http_adapter` / `:json_adapter` / `:codec_adapter`
 (read at request time, so it can be changed at runtime — e.g. in
 `config/runtime.exs` — not just at compile time), else the built-in
-`Httpc`/`Native`/`Dowser.Client.Codec.Default` defaults. This means a backend package like
+`Httpc`/`Native`/`Codec.Default` defaults. This means a backend package like
 `dowser_elasticsearch` can work out of the box with no extra dependencies,
 while an application that already uses `Req` and `Jason` can switch to them
 with a one-line config change — no code changes anywhere that calls

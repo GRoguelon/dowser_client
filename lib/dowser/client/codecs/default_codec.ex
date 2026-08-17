@@ -1,19 +1,11 @@
 defmodule Dowser.Client.Codecs.DefaultCodec do
   @moduledoc """
-  The built-in, backend-agnostic `Dowser.Client.Codec`.
+  Deprecated alias for `Dowser.Client.Codec.Default`.
 
-  `decode/2` applies `opts[:key_fn]` (resolved from `:keys` by
-  `Dowser.Client.Request`) to every key of the decoded body — recursively,
-  through maps, lists and `MapSet`s (an ndjson body decodes to a *list* of maps, so the
-  transform must recurse into it too, not just top-level maps). Any other
-  term (a scalar, `nil`, ...) passes through unchanged.
-
-  `encode/2` does no casting of its own — `dowser_client` has no
-  backend-specific value-casting knowledge; see `Dowser.Client.Codec`.
+  Still usable as a `:codec_adapter` — every callback delegates to
+  `Dowser.Client.Codec.Default`. It will be removed in a future release.
   """
-  @moduledoc deprecated: "Use Dowser.Client.Codecs.Default instead."
-
-  alias Dowser.CoreExt.Keyable
+  @moduledoc deprecated: "Use Dowser.Client.Codec.Default instead."
 
   ## Behaviours
 
@@ -22,14 +14,8 @@ defmodule Dowser.Client.Codecs.DefaultCodec do
   ## Public functions
 
   @impl Dowser.Client.Codec
-  def encode(value, _opts) do
-    {:ok, value}
-  end
+  defdelegate encode(value, opts), to: Dowser.Client.Codec.Default
 
   @impl Dowser.Client.Codec
-  def decode(value, opts) do
-    key_fn = Keyword.fetch!(opts, :key_fn)
-
-    {:ok, Keyable.transform_keys(value, key_fn)}
-  end
+  defdelegate decode(value, opts), to: Dowser.Client.Codec.Default
 end
