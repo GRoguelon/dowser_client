@@ -251,7 +251,7 @@ defmodule Dowser.Client.Request do
 
   defp codec_adapter(config, opts) do
     if Keyword.has_key?(opts, :codec_adapter) do
-      Keyword.fetch!(opts, :codec_adapter) || DefaultCodec
+      Keyword.fetch!(opts, :codec_adapter)
     else
       config.codec_adapter || Application.get_env(:dowser_client, :codec_adapter, DefaultCodec)
     end
