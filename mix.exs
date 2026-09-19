@@ -2,7 +2,7 @@ defmodule Dowser.Client.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_client"
-  @version "0.1.1"
+  @version "0.2.0"
 
   def project do
     [
@@ -33,7 +33,7 @@ defmodule Dowser.Client.MixProject do
   defp package do
     [
       name: :dowser_client,
-      files: ~w[lib .formatter.exs mix.exs README* CHANGELOG* LICENSE*],
+      files: ~w[lib .formatter.exs mix.exs README* CHANGELOG* UPGRADE_GUIDE* LICENSE*],
       maintainers: ["Geoffrey Roguelon"],
       licenses: ["MIT"],
       links: %{
@@ -48,10 +48,10 @@ defmodule Dowser.Client.MixProject do
     [
       formatters: ["html"],
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md"],
+      extras: ["README.md", "UPGRADE_GUIDE_0_2.md", "CHANGELOG.md"],
       source_ref: "v#{@version}",
       source_url: @source_url,
-      skip_undefined_reference_warnings_on: ["CHANGELOG.md"],
+      skip_undefined_reference_warnings_on: ["CHANGELOG.md", "UPGRADE_GUIDE_0_2.md"],
       groups_for_modules: [
         HTTP: [
           Dowser.Client.HTTP,
