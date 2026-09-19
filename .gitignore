@@ -27,3 +27,4 @@ dowser_client-*.tar
 
 # Ignore Claude Code files
 CLAUDE.md
+priv/plts/

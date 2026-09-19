@@ -12,6 +12,7 @@ defmodule Dowser.Client.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
+      dialyzer: dialyzer(),
       package: package(),
       name: "Dowser.Client",
       description: "Low-level HTTP/JSON transport shared by the Dowser search-engine clients",
@@ -24,6 +25,14 @@ defmodule Dowser.Client.MixProject do
   def application do
     [
       extra_applications: [:logger, :inets, :ssl]
+    ]
+  end
+
+  defp dialyzer do
+    [
+      plt_local_path: "priv/plts",
+      plt_core_path: "priv/plts",
+      flags: [:error_handling, :extra_return, :missing_return, :unmatched_returns]
     ]
   end
 
@@ -83,6 +92,8 @@ defmodule Dowser.Client.MixProject do
   defp deps do
     [
       ## Dev
+      {:credo, "~> 1.7", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false, warn_if_outdated: true}
     ]
   end
