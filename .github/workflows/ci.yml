@@ -17,7 +17,8 @@ jobs:
       matrix:
         include:
           # The documented floor: Elixir 1.18 for the built-in JSON module, OTP
-          # 25 for :public_key.cacerts_get/0, which TLS verification uses.
+          # 26 — :public_key.cacerts_get/0, which TLS verification uses, landed
+          # in OTP 25, but 26 is the oldest release this is tested against.
           - elixir: "1.18"
             otp: "26"
           - elixir: "1.18"

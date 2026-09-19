@@ -38,8 +38,9 @@ own reasons, keep them; `dowser_client` no longer looks at them either way.
 `:inets` and `:ssl` are already in this package's `extra_applications`, so
 there is nothing to start yourself.
 
-0.2.0 needs Elixir 1.18+ (for the built-in `JSON` module) and OTP 25+ (for
-`:public_key.cacerts_get/0`, which TLS verification uses).
+0.2.0 needs Elixir 1.18+ (for the built-in `JSON` module) and OTP 26+, the
+oldest release it is tested against; TLS verification reads the OS trust store
+through `:public_key.cacerts_get/0`, which exists from OTP 25.
 
 ## 2. Configs are contexts
 

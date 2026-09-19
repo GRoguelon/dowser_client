@@ -26,8 +26,9 @@ Rather than duplicate that plumbing in every backend-specific package, it
 lives once in `dowser_client`, and each backend package only has to
 implement the parts that are actually specific to it — the API surface.
 
-It needs Elixir 1.18+ (for the built-in `JSON` module) and OTP 25+ (for
-`:public_key.cacerts_get/0`, the OS trust store TLS verifies against).
+It needs Elixir 1.18+ (for the built-in `JSON` module) and OTP 26+ — TLS
+verification reads the OS trust store through `:public_key.cacerts_get/0`, which
+exists from OTP 25, but 26 is the oldest release CI covers.
 
 `dowser_client` has **no dependencies**. HTTP is OTP's own `:httpc` — every
 search backend it targets speaks HTTP/1.1, which is exactly what `:httpc` does —
