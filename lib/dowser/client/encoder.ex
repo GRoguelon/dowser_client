@@ -101,9 +101,9 @@ defmodule Dowser.Client.Encoder do
   update payload encodes the `"doc"` of every line that has one and skips the
   action lines that don't. See `Dowser.Client.NDJSON`.
 
-  The encoder itself is a black box `dowser_client` knows nothing about; see
-  `Dowser.Client.Codec.Builder` for building one out of per-field `dump/2`
-  implementations.
+  The encoder itself is a black box `dowser_client` knows nothing about: how a
+  field's mapping describes it, and what shape the backend wants on the wire, is
+  the backend package's knowledge.
   """
 
   ## Typespecs

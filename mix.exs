@@ -75,8 +75,6 @@ defmodule Dowser.Client.MixProject do
         Casting: [
           Dowser.Client.Decoder,
           Dowser.Client.Encoder,
-          Dowser.Client.Codec.Builder,
-          Dowser.Client.Field,
           Dowser.CoreExt.Keyable
         ],
         Errors: [

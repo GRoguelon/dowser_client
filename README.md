@@ -215,59 +215,14 @@ opinion about (`Date.Range`, `Decimal`) or a format the mapping dictates. The
 pass is skipped for a `nil` or `:raw` body, and a raising encoder comes back as
 `{:error, %Dowser.Client.Error{reason: {:encode_failed, exception}}}`.
 
-### Codecs
+### What a decoder and encoder look like
 
-`Dowser.Client.Field` is a behaviour for casting a single value to and from
-its wire representation — `load/2` (wire → richer term) and `dump/2` (the
-reverse). `dowser_client` ships only the behaviour, no implementations; it
-has no backend-specific knowledge of its own.
-
-`Dowser.Client.Codec.Builder` builds a `load/2`/`dump/2` dispatcher from a
-list of `Dowser.Client.Field` mappings, dispatching on a pattern matched
-against field metadata:
-
-```elixir
-defmodule MyApp.Fields.Date do
-  @behaviour Dowser.Client.Field
-
-  # Both callbacks return the cast term directly, and pass a value they don't
-  # recognize through unchanged rather than raising.
-  @impl true
-  def load(value, %{"format" => "strict_date"}) when is_binary(value) do
-    case Date.from_iso8601(value) do
-      {:ok, date} -> date
-      {:error, _reason} -> value
-    end
-  end
-
-  def load(value, _field), do: value
-
-  @impl true
-  def dump(%Date{} = date, %{"format" => "strict_date"}), do: Date.to_iso8601(date)
-  def dump(value, _field), do: value
-end
-
-defmodule MyApp.FieldCodec do
-  use Dowser.Client.Codec.Builder
-
-  cast %{"type" => "date"}, MyApp.Fields.Date
-end
-```
-
-Each `cast/2` expands into a pattern-matched `load/2`/`dump/2` clause
-dispatching straight to the field module — no indirection at runtime. See
-the `Dowser.Client.Codec.Builder` moduledoc for the `:inherit`, `:fallback`
-and `:nil` options.
-
-A `Codec.Builder`-built module implements `Dowser.Client.Field`'s per-*value*
-contract, so it is what a backend package's `:decoder` and `:encoder` dispatch
-*into*, field by field — `load/2` on the way in, `dump/2` on the way out. The
-walk itself, and the mapping lookup, belong to the package:
+`dowser_client` never inspects a value, so both hooks are ordinary modules in the
+backend package. A decoder walks its own envelope — it is the only place that
+knows a hit carries its index, and therefore which mapping to cast it against:
 
 ```elixir
 defmodule Dowser.Elasticsearch.Decoder do
-  alias Dowser.Elasticsearch.FieldCodec
-
   def decode(body, opts), do: do_decode(body, Keyword.fetch!(opts, :key_fn))
 
   # A hit carries its own index, so the mapping to cast it against can be
@@ -291,18 +246,46 @@ defmodule Dowser.Elasticsearch.Decoder do
 
     Enum.reduce(properties, %{}, fn {field, options}, acc ->
       case Map.fetch(source, field) do
-        {:ok, value} -> Map.put(acc, key_fn.(field), FieldCodec.load(value, options))
+        {:ok, value} -> Map.put(acc, key_fn.(field), load(value, options))
         :error -> acc
       end
     end)
   end
+
+  # Per-field casting, however that backend prefers to organise it.
+  defp load(value, %{"type" => "date"}) when is_binary(value) do
+    case Date.from_iso8601(value) do
+      {:ok, date} -> date
+      {:error, _reason} -> value
+    end
+  end
+
+  defp load(value, _options), do: value
 end
 ```
 
-See the `Dowser.Client.Codec.Builder` moduledoc for the `date`/`date_range`
-fields behind that, and `Dowser.Client.Decoder` for the second pass' full
-contract. `Dowser.CoreExt.Keyable.transform_keys/2` is there too, for a decoder
-that only needs the key half.
+An encoder is the mirror: one function over a document source, given whatever it
+needs through its options.
+
+```elixir
+defmodule Dowser.Elasticsearch.Encoder do
+  def encode(source, opts) do
+    {:ok, %{"properties" => properties}} = MappingCache.fetch(opts[:index])
+
+    Map.new(source, fn {field, value} -> {field, dump(value, properties[field])} end)
+  end
+
+  defp dump(%Date{} = date, %{"type" => "date"}), do: Date.to_iso8601(date)
+  defp dump(value, _options), do: value
+end
+```
+
+`dowser_client` used to ship a `Dowser.Client.Field` behaviour and a
+`Codec.Builder` macro for that per-field layer. They are gone: nothing in the
+pipeline ever called them, and how a backend organises its own casting — a
+`cast/2` dispatcher, a `case` on `"type"`, or a protocol — is its business.
+`Dowser.CoreExt.Keyable.transform_keys/2` remains for a decoder that only needs
+the key half.
 
 ### Transport
 

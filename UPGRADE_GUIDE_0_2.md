@@ -22,7 +22,8 @@ compiler cannot help you with.
 | `:json_adapter`, `:json_opts` (+ `JSON.Native`/`Jason`/`Poison`) | nothing — `Dowser.Client.JSON` |
 | `:codec_adapter`, `:codec_opts` | `:decoder` (reading), `:encoder` + `:encode` (writing) |
 | `Dowser.Client.Codec`, `Codec.Default`, `Codec.Error` | removed |
-| `Dowser.Client.CodecBuilder` | `Dowser.Client.Codec.Builder` |
+| `Dowser.Client.Codec.Builder`, `Dowser.Client.CodecBuilder` | removed — move it into your package |
+| `Dowser.Client.Field` | removed — move it into your package |
 | `Dowser.Client.Codecs.DefaultCodec` | removed |
 | `http_adapter: Dowser.Client.HTTP.Stub` | nothing — `Stub.stub/1` intercepts on its own |
 | `HTTP.Error`'s `:adapter` | `:profile` |
@@ -192,10 +193,31 @@ values, that casting has to move into how you build the query.
 
 Your old `Codec.encode/2` becomes an `encode/2` over one source.
 
-**Per-field casting is unchanged.** `Dowser.Client.Field` and
-`Dowser.Client.Codec.Builder` stay exactly as they were: they are what a decoder
-and encoder dispatch into, field by field. Only the deprecated
-`Dowser.Client.CodecBuilder` alias is gone — `use Dowser.Client.Codec.Builder`.
+**Per-field casting moves to your package.** `Dowser.Client.Field` and
+`Dowser.Client.Codec.Builder` are gone, along with the deprecated
+`Dowser.Client.CodecBuilder` alias. Nothing in `dowser_client` ever called them —
+the pipeline only knows a `:decoder` and an `:encoder` — so where a value's cast
+is chosen is now entirely yours.
+
+Both were plain, self-contained Elixir with no ties to this library, so the
+shortest path is to copy them across and rename:
+
+```
+lib/dowser/client/field.ex         -> lib/my_backend/field.ex
+lib/dowser/client/codec/builder.ex -> lib/my_backend/field/builder.ex
+```
+
+If you do keep the `cast/2` macro, its formatter entry came from this package's
+`.formatter.exs` and goes too — add it to yours:
+
+```elixir
+# .formatter.exs
+locals_without_parens: [cast: 2]
+```
+
+Or drop the machinery: a decoder that `case`s on the mapping's `"type"` is often
+all a backend needs. Either way the dispatch happens inside your `decode/2` and
+`encode/2`, which is the only place that knows the mapping.
 
 **An `:ndjson` payload is cast per line**, in both directions, because a line is
 the unit of a bulk or multi-search body. An encoder sees one entry at a time, so
@@ -249,6 +271,9 @@ is worth a search rather than a test run.
       structs you send.
 - [ ] Replace `:codec_adapter`/`:codec_opts` with `:decoder` and with
       `:encoder` + `:encode`; move key casting into the decoder.
+- [ ] Move `Dowser.Client.Field` and `Dowser.Client.Codec.Builder` into your own
+      package (and `locals_without_parens: [cast: 2]` into its `.formatter.exs`),
+      or replace them with whatever fits that backend's mapping.
 - [ ] Pass `keys:` explicitly wherever you relied on the old default codec.
 - [ ] Drop `http_adapter: Stub` from tests, and give each stubbed test a context.
 - [ ] For an `https://` endpoint, decide between real verification and

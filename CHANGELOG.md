@@ -165,16 +165,21 @@ error rather than a silent behavior change, and each entry names its replacement
   `Dowser.Client.JSON.Poison`, along with the `jason` and `poison` optional
   dependencies and the `:json_adapter`/`:json_opts` options. JSON is Elixir's
   built-in `JSON` module, always.
-- **Breaking.** `Dowser.Client.Codec`, `Dowser.Client.Codec.Default`,
-  `Dowser.Client.Codec.Error` and the `:codec_adapter`/`:codec_opts` options,
-  replaced by `:keys`/`:decoder` for reading and `:encoder`/`:encode` for
-  writing. `Dowser.Client.Codec.Builder` and `Dowser.Client.Field` stay: they are
-  the per-field layer a backend package's decoder and encoder dispatch into.
-- **Breaking.** Both aliases deprecated in 0.1.1 are gone, as announced there:
-  - `Dowser.Client.CodecBuilder` — `use Dowser.Client.Codec.Builder` instead.
-  - `Dowser.Client.Codecs.DefaultCodec` — it delegated to
-    `Dowser.Client.Codec.Default`, which this release removes outright; the
-    replacement is `:keys`/`:decoder`.
+- **Breaking.** The whole codec layer: `Dowser.Client.Codec`,
+  `Dowser.Client.Codec.Default`, `Dowser.Client.Codec.Error` and the
+  `:codec_adapter`/`:codec_opts` options, replaced by `:keys`/`:decoder` for
+  reading and `:encoder`/`:encode` for writing.
+- **Breaking.** `Dowser.Client.Codec.Builder` and `Dowser.Client.Field`, the
+  per-field casting layer. Nothing in `dowser_client` ever called them: the
+  pipeline only knows a `:decoder` and an `:encoder`, and how to dispatch inside
+  one is the backend package's business, not the transport's. Move them into
+  yours — a `cast/2` dispatcher is a `use`-able macro and a behaviour, with no
+  ties to this library — or write whatever suits that backend's mapping instead.
+  `:formatter.exs`' `locals_without_parens: [cast: 2]` goes with them.
+- **Breaking.** Both aliases deprecated in 0.1.1 are gone, as announced there —
+  and so are the modules they delegated to: `Dowser.Client.CodecBuilder` (for
+  `Dowser.Client.Codec.Builder`) and `Dowser.Client.Codecs.DefaultCodec` (for
+  `Dowser.Client.Codec.Default`).
 
 ## [0.1.1] - 2026-08-17
 
