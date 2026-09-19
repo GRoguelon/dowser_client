@@ -9,17 +9,17 @@ defmodule Dowser.Client.RetryTest do
 
   describe "resolve/1" do
     test "defaults when :retry is absent" do
-      assert {:ok, config} = Retry.resolve([])
-      assert config[:max_attempts] == 3
-      assert config[:base_delay_ms] == 200
-      assert config[:max_delay_ms] == 2_000
-      assert config[:retryable_statuses] == [429, 502, 503, 504]
+      assert {:ok, context} = Retry.resolve([])
+      assert context[:max_attempts] == 3
+      assert context[:base_delay_ms] == 200
+      assert context[:max_delay_ms] == 2_000
+      assert context[:retryable_statuses] == [429, 502, 503, 504]
     end
 
     test "a partial keyword list overrides only the given keys" do
-      assert {:ok, config} = Retry.resolve(retry: [max_attempts: 5])
-      assert config[:max_attempts] == 5
-      assert config[:base_delay_ms] == 200
+      assert {:ok, context} = Retry.resolve(retry: [max_attempts: 5])
+      assert context[:max_attempts] == 5
+      assert context[:base_delay_ms] == 200
     end
 
     test "an explicit nil is treated the same as absent (defaults, not disabled)" do
@@ -27,8 +27,8 @@ defmodule Dowser.Client.RetryTest do
     end
 
     test "false disables retries" do
-      assert {:ok, config} = Retry.resolve(retry: false)
-      assert config[:max_attempts] == 1
+      assert {:ok, context} = Retry.resolve(retry: false)
+      assert context[:max_attempts] == 1
     end
 
     test "an invalid value is a generic error" do
@@ -39,7 +39,7 @@ defmodule Dowser.Client.RetryTest do
   describe "run/2" do
     test "succeeds on the first attempt without sleeping" do
       assert {{:ok, %Response{status: 200}}, 1} =
-               Retry.run(config(), fn -> {:ok, %Response{status: 200}} end)
+               Retry.run(context(), fn -> {:ok, %Response{status: 200}} end)
     end
 
     test "retries a transient error until it succeeds" do
@@ -50,14 +50,14 @@ defmodule Dowser.Client.RetryTest do
         if n < 2, do: {:error, :timeout}, else: {:ok, %Response{status: 200}}
       end
 
-      assert {{:ok, %Response{status: 200}}, 3} = Retry.run(config(max_attempts: 5), fun)
+      assert {{:ok, %Response{status: 200}}, 3} = Retry.run(context(max_attempts: 5), fun)
     end
 
     test "gives up after max_attempts and returns the last error" do
       {:ok, counter} = Agent.start_link(fn -> 0 end)
       fun = fn -> Agent.get_and_update(counter, &{{:error, :timeout}, &1 + 1}) end
 
-      assert {{:error, :timeout}, 3} = Retry.run(config(max_attempts: 3), fun)
+      assert {{:error, :timeout}, 3} = Retry.run(context(max_attempts: 3), fun)
       assert Agent.get(counter, & &1) == 3
     end
 
@@ -69,14 +69,14 @@ defmodule Dowser.Client.RetryTest do
         if n < 1, do: {:ok, %Response{status: 503}}, else: {:ok, %Response{status: 200}}
       end
 
-      assert {{:ok, %Response{status: 200}}, 2} = Retry.run(config(max_attempts: 5), fun)
+      assert {{:ok, %Response{status: 200}}, 2} = Retry.run(context(max_attempts: 5), fun)
     end
 
     test "does not retry a non-retryable status" do
       {:ok, counter} = Agent.start_link(fn -> 0 end)
       fun = fn -> Agent.get_and_update(counter, &{{:ok, %Response{status: 404}}, &1 + 1}) end
 
-      assert {{:ok, %Response{status: 404}}, 1} = Retry.run(config(max_attempts: 5), fun)
+      assert {{:ok, %Response{status: 404}}, 1} = Retry.run(context(max_attempts: 5), fun)
       assert Agent.get(counter, & &1) == 1
     end
 
@@ -84,7 +84,7 @@ defmodule Dowser.Client.RetryTest do
       {:ok, counter} = Agent.start_link(fn -> 0 end)
       fun = fn -> Agent.get_and_update(counter, &{{:error, :enoent}, &1 + 1}) end
 
-      assert {{:error, :enoent}, 1} = Retry.run(config(max_attempts: 5), fun)
+      assert {{:error, :enoent}, 1} = Retry.run(context(max_attempts: 5), fun)
       assert Agent.get(counter, & &1) == 1
     end
   end
@@ -116,13 +116,13 @@ defmodule Dowser.Client.RetryTest do
 
   describe "delay/2" do
     test "stays within the exponential full-jitter bounds" do
-      config = config(base_delay_ms: 100, max_delay_ms: 1_000)
+      context = context(base_delay_ms: 100, max_delay_ms: 1_000)
 
       for attempt <- 1..6 do
         ceiling = min(1_000, 100 * Integer.pow(2, attempt - 1))
 
         for _ <- 1..200 do
-          delay = Retry.delay(config, attempt)
+          delay = Retry.delay(context, attempt)
           assert delay >= 1
           assert delay <= ceiling
         end
@@ -130,13 +130,13 @@ defmodule Dowser.Client.RetryTest do
     end
 
     test "never raises even with a zero base_delay_ms" do
-      config = config(base_delay_ms: 0, max_delay_ms: 0)
-      assert Retry.delay(config, 1) >= 1
+      context = context(base_delay_ms: 0, max_delay_ms: 0)
+      assert Retry.delay(context, 1) >= 1
     end
   end
 
-  defp config(overrides \\ []) do
-    {:ok, config} = Retry.resolve(retry: Keyword.merge(@fast, overrides))
-    config
+  defp context(overrides \\ []) do
+    {:ok, context} = Retry.resolve(retry: Keyword.merge(@fast, overrides))
+    context
   end
 end

@@ -53,29 +53,25 @@ defmodule Dowser.Client.MixProject do
       source_url: @source_url,
       skip_undefined_reference_warnings_on: ["CHANGELOG.md"],
       groups_for_modules: [
-        "HTTP Adapters": [
-          Dowser.Client.HTTP.Adapter,
-          Dowser.Client.HTTP.Httpc,
-          Dowser.Client.HTTP.Req,
-          Dowser.Client.HTTP.Hackney,
+        HTTP: [
+          Dowser.Client.HTTP,
+          Dowser.Client.HTTP.Profile,
+          Dowser.Client.HTTP.SSL,
           Dowser.Client.HTTP.Stub
         ],
-        "JSON Adapters": [
-          Dowser.Client.NDJSON,
-          Dowser.Client.JSON.Adapter,
-          Dowser.Client.JSON.Native,
-          Dowser.Client.JSON.Jason,
-          Dowser.Client.JSON.Poison
+        JSON: [
+          Dowser.Client.JSON,
+          Dowser.Client.NDJSON
         ],
-        "Codec Adapters": [
-          Dowser.Client.Codec,
-          Dowser.Client.Codec.Default,
+        Casting: [
+          Dowser.Client.Decoder,
+          Dowser.Client.Encoder,
           Dowser.Client.Codec.Builder,
-          Dowser.Client.Field
+          Dowser.Client.Field,
+          Dowser.CoreExt.Keyable
         ],
         Errors: [
           Dowser.Client.Error,
-          Dowser.Client.Codec.Error,
           Dowser.Client.HTTP.Error,
           Dowser.Client.JSON.Error
         ]
@@ -86,11 +82,6 @@ defmodule Dowser.Client.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:req, "~> 0.7", optional: true},
-      {:hackney, "~> 4.6", optional: true},
-      {:jason, "~> 1.4", optional: true},
-      {:poison, "~> 6.0", optional: true},
-
       ## Dev
       {:ex_doc, "~> 0.34", only: :dev, runtime: false, warn_if_outdated: true}
     ]

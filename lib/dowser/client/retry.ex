@@ -2,14 +2,13 @@ defmodule Dowser.Client.Retry do
   @moduledoc """
   Generic retry policy for transient HTTP failures.
 
-  Lives outside `Dowser.Client.HTTP.*` deliberately: retry is orchestration
-  around whichever adapter is configured, not a transport concern, so it
-  works uniformly for `:httpc`, `Req`, `:hackney` and any custom adapter.
+  Lives outside `Dowser.Client.HTTP` deliberately: retry is orchestration
+  around the transport, not a transport concern.
 
   `resolve/1` turns `opts[:retry]` into a full config (stored on
   `%Dowser.Client.Request{}`); `run/2` drives an arbitrary zero-arity `fun`
   through that policy, sleeping between attempts with exponential
-  full-jitter backoff; `transient?/1` classifies an adapter's raw
+  full-jitter backoff; `transient?/1` classifies the transport's raw
   `{:error, reason}` payload.
 
   ## Options
@@ -42,7 +41,18 @@ defmodule Dowser.Client.Retry do
     retryable_statuses: [429, 502, 503, 504]
   ]
 
-  @transient_reasons [:timeout, :econnrefused, :closed, :enetunreach, :ehostunreach, :nxdomain]
+  @transient_reasons [
+    :timeout,
+    :etimedout,
+    :econnrefused,
+    :econnreset,
+    :closed,
+    # :httpc's own term for a keep-alive session the server closed under us.
+    :socket_closed_remotely,
+    :enetunreach,
+    :ehostunreach,
+    :nxdomain
+  ]
 
   ## Public functions
 

@@ -2,21 +2,23 @@ defmodule Dowser.Client.HTTP.Error do
   @moduledoc """
   HTTP transport error.
 
-  Wraps whatever the HTTP adapter surfaced — a bare reason (`:timeout`,
-  `:econnrefused`, a `:failed_connect` tuple) or a dependency exception
-  (`Mint.TransportError`, ...) — so callers never receive a dependency's own
-  exception type. The original term is kept in `:reason` for debugging.
+  Wraps whatever `Dowser.Client.HTTP` surfaced — `:httpc`'s own reason
+  (`:timeout`, `:socket_closed_remotely`, a `:failed_connect` tuple, a TLS
+  `{:tls_alert, _}`) or one of the transport's (`{:unsupported_body, method}`,
+  `{:unknown_http_opts, keys}`, `{:no_cacerts, _}`, `{:profile_down, _}`) — so
+  callers handle one exception type. The original term is kept in `:reason`,
+  and `:profile` records which `:httpc` profile the request went through.
   """
 
   @type t :: %__MODULE__{
           reason: term(),
           method: atom() | nil,
           url: String.t() | nil,
-          adapter: module() | nil,
+          profile: atom() | nil,
           attempts: pos_integer()
         }
 
-  defexception [:reason, :method, :url, :adapter, attempts: 1]
+  defexception [:reason, :method, :url, :profile, attempts: 1]
 
   @impl true
   def message(%__MODULE__{reason: reason, method: method, url: url, attempts: attempts}) do

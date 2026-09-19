@@ -1,37 +1,23 @@
-defmodule Dowser.Client.ResponseRaisingAdapter do
-  @moduledoc false
-  @behaviour Dowser.Client.JSON.Adapter
-
-  @impl true
-  def encode(term, _opts), do: {:ok, inspect(term)}
-
-  @impl true
-  def decode(_binary, _opts), do: raise("adapter blew up")
-end
-
 defmodule Dowser.Client.ResponseTest do
   use ExUnit.Case, async: true
 
-  alias Dowser.Client.Codec.Error, as: CodecError
-  alias Dowser.Client.Config
-  alias Dowser.Client.FakeCodec
+  alias Dowser.Client.Context
+  alias Dowser.Client.Error
   alias Dowser.Client.JSON.Error, as: JSONError
   alias Dowser.Client.Request
   alias Dowser.Client.Response
 
-  @json Dowser.Client.JSON.Native
-
   defp response(body), do: %Response{status: 200, body: body}
 
   # `Response.decode/2` takes the fully-resolved `%Request{}` built by
-  # `Dowser.Client.Request.new/5` (rather than raw format/adapter/opts), so
+  # `Dowser.Client.Request.new/5` (rather than raw format/codec/opts), so
   # tests build one through the real resolution pipeline via `request/1` and
   # only vary what each test cares about.
   defp request(opts \\ []) do
-    config = Keyword.get(opts, :config, Config.new(endpoint: "http://x:9200"))
-    request_opts = Keyword.drop(opts, [:config])
+    context = Keyword.get(opts, :context, Context.new(endpoint: "http://x:9200"))
+    request_opts = Keyword.drop(opts, [:context])
 
-    assert {:ok, request} = Request.new(config, :get, "/", nil, request_opts)
+    assert {:ok, request} = Request.new(context, :get, "/", nil, request_opts)
     request
   end
 
@@ -83,44 +69,33 @@ defmodule Dowser.Client.ResponseTest do
     end
 
     test "a decode failure is wrapped in a JSON error" do
-      assert {:error, %JSONError{operation: :decode, adapter: @json}} =
+      assert {:error, %JSONError{operation: :decode}} =
                Response.decode(response("{not json"), request())
     end
 
-    test "an ndjson decode failure ({:error, reason} from the adapter) is wrapped in a JSON error" do
-      assert {:error, %JSONError{operation: :decode, adapter: @json}} =
+    test "an ndjson decode failure is wrapped in a JSON error" do
+      assert {:error, %JSONError{operation: :decode}} =
                Response.decode(response(~s({"ok":1}\n{broken)), request(format: :ndjson))
     end
 
-    test "a raised (not returned) exception from json_adapter.decode/2 is wrapped in a JSON error" do
-      assert {:error,
-              %JSONError{operation: :decode, reason: %RuntimeError{message: "adapter blew up"}}} =
-               Response.decode(
-                 response(~s({"ok":true})),
-                 request(json_adapter: Dowser.Client.ResponseRaisingAdapter)
-               )
+    test "keys are always strings, however deeply nested — casting them is the codec's job" do
+      assert {:ok, %Response{body: %{"a" => %{"b" => [%{"c" => 1}]}}}} =
+               Response.decode(response(~s({"a":{"b":[{"c":1}]}})), request())
     end
 
-    test "a raised (not returned) exception from the adapter is wrapped for ndjson too" do
-      assert {:error,
-              %JSONError{operation: :decode, reason: %RuntimeError{message: "adapter blew up"}}} =
-               Response.decode(
-                 response(~s({"ok":true}\n)),
-                 request(format: :ndjson, json_adapter: Dowser.Client.ResponseRaisingAdapter)
-               )
+    test "no :keys or :decoder means no second pass at all" do
+      assert Response.decode(response(~s({"ok":true,"date":"2026-09-18"})), request()) ==
+               {:ok, response(%{"ok" => true, "date" => "2026-09-18"})}
+    end
+  end
+
+  describe "decode/2 second pass" do
+    test "keys: :atoms casts every key, however deeply nested" do
+      assert {:ok, %Response{body: %{a: %{b: [%{c: 1}]}}}} =
+               Response.decode(response(~s({"a":{"b":[{"c":1}]}})), request(keys: :atoms))
     end
 
-    test "defaults to string keys" do
-      assert {:ok, %Response{body: %{"a" => %{"b" => 1}}}} =
-               Response.decode(response(~s({"a":{"b":1}})), request())
-    end
-
-    test "keys: :atoms casts every object key, however deeply nested" do
-      assert {:ok, %Response{body: %{a: %{b: 1}}}} =
-               Response.decode(response(~s({"a":{"b":1}})), request(keys: :atoms))
-    end
-
-    test "keys: :atoms casts keys inside list elements too" do
+    test "keys: :atoms casts keys inside an ndjson list too" do
       assert {:ok, %Response{body: [%{a: 1}, %{b: 2}]}} =
                Response.decode(
                  response(~s({"a":1}\n{"b":2}\n)),
@@ -129,7 +104,7 @@ defmodule Dowser.Client.ResponseTest do
     end
 
     test "keys: :atoms! succeeds for a key that already exists as an atom" do
-      _ = String.to_atom("response_test_existing_key")
+      _existing = String.to_atom("response_test_existing_key")
 
       assert {:ok, %Response{body: %{response_test_existing_key: 1}}} =
                Response.decode(
@@ -138,119 +113,109 @@ defmodule Dowser.Client.ResponseTest do
                )
     end
 
-    # Key casting happens inside the (default) codec_adapter's decode/2, so a
-    # raised ArgumentError from :atoms! is caught by Response's codec-cast
-    # rescue and wrapped in a Codec.Error — not a JSON.Error, since JSON
-    # decoding itself already succeeded by this point.
-    test "keys: :atoms! wraps ArgumentError for an unknown atom in a Codec error" do
-      assert {:error,
-              %CodecError{
-                operation: :decode,
-                codec: Dowser.Client.Codec.Default,
-                reason: %ArgumentError{}
-              }} =
+    test "keys: a function of arity 1 is applied to every key" do
+      assert {:ok, %Response{body: %{"A" => %{"B" => [%{"C" => 1}]}}}} =
+               Response.decode(
+                 response(~s({"a":{"b":[{"c":1}]}})),
+                 request(keys: &String.upcase/1)
+               )
+    end
+
+    test "keys: :atoms! wraps the ArgumentError for an unknown atom" do
+      assert {:error, %Error{reason: {:decode_failed, %ArgumentError{}}} = error} =
                Response.decode(
                  response(~s({"response_test_definitely_unknown_key":1})),
                  request(keys: :atoms!)
                )
+
+      assert Exception.message(error) =~ "decoding the response body failed"
     end
 
-    test "with the default codec_adapter, keys are still cast per :keys" do
-      assert Response.decode(response(~s({"ok":true})), request(keys: :atoms)) ==
-               {:ok, response(%{ok: true})}
-    end
-
-    test "with the default codec_adapter, values are never cast (only keys)" do
-      assert Response.decode(response(~s({"ok":true})), request()) ==
-               {:ok, response(%{"ok" => true})}
-    end
-
-    # `codec_adapter: nil` isn't reachable through `Dowser.Client.Request.new/5`
-    # (it always resolves a real module, defaulting to DefaultCodec) — this is
-    # a defensive fallback in `Response`'s private `cast/2`, only reachable by
-    # building a `%Request{}` directly. Pinned here so it isn't silently
-    # dropped as "dead code".
-    test "codec_adapter: nil (only reachable via a hand-built %Request{}) skips casting entirely" do
-      raw_request = %{request() | codec_adapter: nil}
-
-      assert Response.decode(response(~s({"ok":true})), raw_request) ==
-               {:ok, response(%{"ok" => true})}
-    end
-  end
-
-  describe "decode/2 codec_adapter" do
-    test "invokes the configured codec_adapter's decode/2 with the decoded term and codec_opts" do
-      fun = fn term, _opts -> Map.put(term, "cast", true) end
-
-      assert Response.decode(
-               response(~s({"ok":true})),
-               request(codec_adapter: FakeCodec, codec_opts: [decode_fun: fun])
-             ) == {:ok, response(%{"ok" => true, "cast" => true})}
-    end
-
-    test "codec_adapter receives :key_fn (resolved from :keys) and :config in opts" do
-      config = Config.new(endpoint: "http://x:9200")
-
-      fun = fn term, opts ->
-        send(self(), {:decode_saw, opts[:key_fn].("k"), opts[:config]})
-        term
+    test "a decoder receives the whole decoded body, its own options and :key_fn" do
+      decoder = fn body, opts ->
+        %{"seen" => body, "key" => opts[:key_fn].("k"), "mapping" => opts[:mapping]}
       end
 
-      assert {:ok, _} =
+      assert {:ok, %Response{body: decoded}} =
                Response.decode(
-                 response(~s({"ok":true})),
-                 request(
-                   config: config,
-                   codec_adapter: FakeCodec,
-                   codec_opts: [decode_fun: fun],
-                   keys: :atoms
-                 )
+                 response(~s({"a":1})),
+                 request(keys: :atoms, decoder: {decoder, mapping: :some_mapping})
                )
 
-      assert_received {:decode_saw, :k, ^config}
+      assert decoded == %{"seen" => %{"a" => 1}, "key" => :k, "mapping" => :some_mapping}
     end
 
-    test "codec_adapter casts keys itself in a single pass — dowser_client does not cast keys again afterward" do
-      fun = fn term, _opts -> Map.new(term, fn {k, v} -> {String.upcase(k), v} end) end
+    test "the decoder owns the body — its output is not key-cast afterwards" do
+      decoder = fn _body, _opts -> %{"left" => "alone"} end
 
-      # FakeCodec above uppercases string keys instead of atomizing them; if
-      # dowser_client ran its own key-cast pass afterward with keys: :atoms,
-      # this would crash trying to atomize an already-cast key (or silently
-      # double-cast). Neither happens — the codec's own output keys are
-      # final.
-      assert Response.decode(
-               response(~s({"ok":true})),
-               request(codec_adapter: FakeCodec, codec_opts: [decode_fun: fun], keys: :atoms)
-             ) == {:ok, response(%{"OK" => true})}
+      assert {:ok, %Response{body: %{"left" => "alone"}}} =
+               Response.decode(response(~s({"a":1})), request(keys: :atoms, decoder: decoder))
     end
 
-    test "the whole decoded ndjson list is handed to the codec at once (it handles per-element structure itself)" do
-      fun = fn terms, _opts -> Enum.map(terms, &Map.put(&1, "cast", true)) end
+    test "a decoder also gets the resolved context in opts" do
+      context = Context.new(endpoint: "http://x:9200")
+      decoder = fn _body, opts -> opts[:context] end
 
-      assert Response.decode(
-               response(~s({"a":1}\n{"b":2}\n)),
-               request(format: :ndjson, codec_adapter: FakeCodec, codec_opts: [decode_fun: fun])
-             ) == {:ok, response([%{"a" => 1, "cast" => true}, %{"b" => 2, "cast" => true}])}
+      assert {:ok, %Response{body: ^context}} =
+               Response.decode(response(~s({"a":1})), request(context: context, decoder: decoder))
     end
 
-    test "wraps a raised exception from the codec in a Codec.Error" do
-      fun = fn _term, _opts -> raise "boom" end
+    test "a JSON null body skips the decoder entirely" do
+      decoder = fn _body, _opts -> raise "never called" end
 
-      assert {:error, %CodecError{reason: %RuntimeError{message: "boom"}, operation: :decode}} =
-               Response.decode(
-                 response(~s({"ok":true})),
-                 request(codec_adapter: FakeCodec, codec_opts: [decode_fun: fun])
-               )
+      assert {:ok, %Response{body: nil}} =
+               Response.decode(response("null"), request(keys: :atoms, decoder: decoder))
     end
 
-    test "a codec exception while processing an ndjson body is wrapped in a Codec.Error" do
-      fun = fn [%{"a" => 1} | _rest], _opts -> raise "bad_first" end
+    test "an empty body skips the decoder entirely" do
+      decoder = fn _body, _opts -> raise "never called" end
 
-      assert {:error, %CodecError{reason: %RuntimeError{message: "bad_first"}}} =
+      assert {:ok, %Response{body: ""}} =
+               Response.decode(response(""), request(decoder: decoder))
+
+      assert {:ok, %Response{body: nil}} =
+               Response.decode(response(nil), request(decoder: decoder))
+    end
+
+    test "an ndjson body is decoded entry by entry, not as one list" do
+      decoder = fn entry, opts -> Map.put(entry, opts[:key_fn].("line"), true) end
+
+      assert {:ok, %Response{body: [first, second]}} =
                Response.decode(
                  response(~s({"a":1}\n{"b":2}\n)),
-                 request(format: :ndjson, codec_adapter: FakeCodec, codec_opts: [decode_fun: fun])
+                 request(format: :ndjson, keys: :atoms, decoder: decoder)
                )
+
+      # The decoder owns the keys of each entry, exactly as for a JSON body: it
+      # was handed :key_fn and only applied it to the key it added itself.
+      assert first == %{:line => true, "a" => 1}
+      assert second == %{:line => true, "b" => 2}
+    end
+
+    test "a raising decoder on an ndjson body is wrapped too" do
+      decoder = fn _entry, _opts -> raise "boom" end
+
+      assert {:error, %Error{reason: {:decode_failed, %RuntimeError{message: "boom"}}}} =
+               Response.decode(
+                 response(~s({"a":1}\n)),
+                 request(format: :ndjson, decoder: decoder)
+               )
+    end
+
+    test "a raising decoder is wrapped rather than crashing the caller" do
+      decoder = fn _body, _opts -> raise "boom" end
+
+      assert {:error, %Error{reason: {:decode_failed, %RuntimeError{message: "boom"}}}} =
+               Response.decode(response(~s({"a":1})), request(decoder: decoder))
+    end
+
+    test "the second pass is skipped for a raw body" do
+      assert Response.decode(response(~s({"a":1})), request(format: :raw, keys: :atoms)) ==
+               {:ok, response(~s({"a":1}))}
+    end
+
+    test "the second pass is skipped for an empty body" do
+      assert Response.decode(response(""), request(keys: :atoms)) == {:ok, response("")}
     end
   end
 end

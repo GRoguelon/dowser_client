@@ -22,7 +22,8 @@ defmodule Dowser.Client.Field do
   (e.g. `dowser_elasticsearch`) implements one module per field type and
   wires them together with `Dowser.Client.Codec.Builder`, which assembles a
   `load/2`/`dump/2` dispatcher from them — see its moduledoc for how that
-  dispatcher is then wired into a `Dowser.Client.Codec` as `:codec_adapter`.
+  dispatcher is then what a backend package's `:decoder` and `:encoder` dispatch
+  into, field by field; see `Dowser.Client.Decoder` and `Dowser.Client.Encoder`.
 
       defmodule MyApp.Fields.Date do
         @behaviour Dowser.Client.Field

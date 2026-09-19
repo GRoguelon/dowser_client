@@ -117,18 +117,20 @@ defmodule Dowser.Client.TCPTestServer do
   end
 
   defp content_length(head) do
-    head
-    |> String.split("\r\n")
-    |> Enum.find_value(0, fn line ->
-      case String.split(line, ":", parts: 2) do
-        [k, v] ->
-          if String.downcase(String.trim(k)) == "content-length",
-            do: String.to_integer(String.trim(v))
+    head |> String.split("\r\n") |> Enum.find_value(0, &content_length_header/1)
+  end
 
-        _ ->
-          nil
-      end
-    end)
+  defp content_length_header(line) do
+    case String.split(line, ":", parts: 2) do
+      [name, value] -> content_length_value(name, value)
+      _other -> nil
+    end
+  end
+
+  defp content_length_value(name, value) do
+    if String.downcase(String.trim(name)) == "content-length" do
+      String.to_integer(String.trim(value))
+    end
   end
 
   defp parse(head, body) do

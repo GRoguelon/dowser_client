@@ -1,21 +1,20 @@
 defmodule Dowser.Client.JSON.Error do
   @moduledoc """
-  JSON codec error.
+  JSON encoding or decoding error.
 
-  Wraps whatever a `Dowser.Client.JSON.Adapter` surfaced while encoding or
-  decoding — a returned `{:error, reason}` or a raised dependency exception
-  (`Jason.EncodeError`, `Protocol.UndefinedError`, ...) — so callers never
-  receive a dependency's own exception type. `:operation` is `:encode` or
+  Wraps whatever `Dowser.Client.JSON` surfaced — `JSON`'s own
+  `{:unexpected_end, _}`/`{:invalid_byte, _, _}` reason, or a raised
+  `Protocol.UndefinedError` for a term that has no JSON representation — so
+  callers only handle Dowser exceptions. `:operation` is `:encode` or
   `:decode`; the original term is kept in `:reason`.
   """
 
   @type t :: %__MODULE__{
           reason: term(),
-          operation: :encode | :decode | nil,
-          adapter: module() | nil
+          operation: :encode | :decode | nil
         }
 
-  defexception [:reason, :operation, :adapter]
+  defexception [:reason, :operation]
 
   @impl true
   def message(%__MODULE__{reason: reason, operation: operation}) do
