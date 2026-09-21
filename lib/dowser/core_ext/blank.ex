@@ -5,10 +5,12 @@ defmodule Dowser.Blank do
 
   ## Public functions
 
-  def blank?(value) do
-    Blankable.blank?(value)
-  end
+  @doc "Whether `value` is blank, per `Dowser.Blankable`."
+  @spec blank?(term()) :: boolean()
+  defdelegate blank?(value), to: Blankable
 
+  @doc "The negation of `blank?/1`."
+  @spec present?(term()) :: boolean()
   def present?(value) do
     not Blankable.blank?(value)
   end

@@ -2,7 +2,7 @@ defmodule Dowser.Client.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_client"
-  @version "0.1.1"
+  @version "0.2.0"
 
   def project do
     [
@@ -12,6 +12,7 @@ defmodule Dowser.Client.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
+      dialyzer: dialyzer(),
       package: package(),
       name: "Dowser.Client",
       description: "Low-level HTTP/JSON transport shared by the Dowser search-engine clients",
@@ -27,13 +28,21 @@ defmodule Dowser.Client.MixProject do
     ]
   end
 
+  defp dialyzer do
+    [
+      plt_local_path: "priv/plts",
+      plt_core_path: "priv/plts",
+      flags: [:error_handling, :extra_return, :missing_return, :unmatched_returns]
+    ]
+  end
+
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_env), do: ["lib"]
 
   defp package do
     [
       name: :dowser_client,
-      files: ~w[lib .formatter.exs mix.exs README* CHANGELOG* LICENSE*],
+      files: ~w[lib .formatter.exs mix.exs README* CHANGELOG* UPGRADE_GUIDE* LICENSE*],
       maintainers: ["Geoffrey Roguelon"],
       licenses: ["MIT"],
       links: %{
@@ -48,34 +57,28 @@ defmodule Dowser.Client.MixProject do
     [
       formatters: ["html"],
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md"],
+      extras: ["README.md", "UPGRADE_GUIDE_0_2.md", "CHANGELOG.md"],
       source_ref: "v#{@version}",
       source_url: @source_url,
-      skip_undefined_reference_warnings_on: ["CHANGELOG.md"],
+      skip_undefined_reference_warnings_on: ["CHANGELOG.md", "UPGRADE_GUIDE_0_2.md"],
       groups_for_modules: [
-        "HTTP Adapters": [
-          Dowser.Client.HTTP.Adapter,
-          Dowser.Client.HTTP.Httpc,
-          Dowser.Client.HTTP.Req,
-          Dowser.Client.HTTP.Hackney,
+        HTTP: [
+          Dowser.Client.HTTP,
+          Dowser.Client.HTTP.Profile,
+          Dowser.Client.HTTP.SSL,
           Dowser.Client.HTTP.Stub
         ],
-        "JSON Adapters": [
-          Dowser.Client.NDJSON,
-          Dowser.Client.JSON.Adapter,
-          Dowser.Client.JSON.Native,
-          Dowser.Client.JSON.Jason,
-          Dowser.Client.JSON.Poison
+        JSON: [
+          Dowser.Client.JSON,
+          Dowser.Client.NDJSON
         ],
-        "Codec Adapters": [
-          Dowser.Client.Codec,
-          Dowser.Client.Codec.Default,
-          Dowser.Client.Codec.Builder,
-          Dowser.Client.Field
+        Casting: [
+          Dowser.Client.Decoder,
+          Dowser.Client.Encoder,
+          Dowser.CoreExt.Keyable
         ],
         Errors: [
           Dowser.Client.Error,
-          Dowser.Client.Codec.Error,
           Dowser.Client.HTTP.Error,
           Dowser.Client.JSON.Error
         ]
@@ -86,12 +89,9 @@ defmodule Dowser.Client.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:req, "~> 0.7", optional: true},
-      {:hackney, "~> 4.6", optional: true},
-      {:jason, "~> 1.4", optional: true},
-      {:poison, "~> 6.0", optional: true},
-
       ## Dev
+      {:credo, "~> 1.7", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false, warn_if_outdated: true}
     ]
   end

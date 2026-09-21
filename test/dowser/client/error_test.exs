@@ -13,9 +13,9 @@ defmodule Dowser.Client.ErrorTest do
       assert Exception.message(error) == "custom message"
     end
 
-    test "{:unknown_config, name}" do
-      error = Error.exception(reason: {:unknown_config, :main})
-      assert Exception.message(error) == "unknown config :main"
+    test "{:unknown_context, name}" do
+      error = Error.exception(reason: {:unknown_context, :main})
+      assert Exception.message(error) == "unknown context :main"
     end
 
     test "{:invalid_format, format}" do
@@ -41,7 +41,8 @@ defmodule Dowser.Client.ErrorTest do
       error = Error.exception(reason: {:invalid_keys, :bogus_keys})
 
       assert Exception.message(error) ==
-               "invalid :keys option :bogus_keys, expected :strings, :atoms or :atoms!"
+               "invalid :keys option :bogus_keys, expected :strings, :atoms, :atoms! " <>
+                 "or a function of arity 1"
     end
 
     test "an unrecognized reason falls back to a generic inspect-based message" do
@@ -50,8 +51,8 @@ defmodule Dowser.Client.ErrorTest do
     end
 
     test "raise/2 with a module + keyword list builds the exception via exception/1" do
-      assert_raise Error, "unknown config :main", fn ->
-        raise Error, reason: {:unknown_config, :main}
+      assert_raise Error, "unknown context :main", fn ->
+        raise Error, reason: {:unknown_context, :main}
       end
     end
   end

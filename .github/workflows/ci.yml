@@ -16,6 +16,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The documented floor: Elixir 1.18 for the built-in JSON module, OTP
+          # 26 — :public_key.cacerts_get/0, which TLS verification uses, landed
+          # in OTP 25, but 26 is the oldest release this is tested against.
+          - elixir: "1.18"
+            otp: "26"
           - elixir: "1.18"
             otp: "27"
           - elixir: "1.18"
@@ -59,3 +64,58 @@ jobs:
 
       - name: Run tests
         run: mix test
+
+  quality:
+    name: Format, Credo, Dialyzer, Docs
+    runs-on: ubuntu-26.04
+    # `credo`, `dialyxir` and `ex_doc` are dev-only dependencies.
+    env:
+      MIX_ENV: dev
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: erlef/setup-beam@v1
+        id: beam
+        with:
+          elixir-version: "1.18"
+          otp-version: "27"
+
+      - name: Restore deps/build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+          key: >-
+            ${{ runner.os }}-quality-${{ steps.beam.outputs.elixir-version }}-${{
+            steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-quality-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-
+
+      - name: Restore Dialyzer PLT cache
+        uses: actions/cache@v6
+        with:
+          path: priv/plts
+          key: >-
+            ${{ runner.os }}-plt-${{ steps.beam.outputs.elixir-version }}-${{
+            steps.beam.outputs.otp-version }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-plt-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile without warnings
+        run: mix compile --warnings-as-errors
+
+      - name: Credo
+        run: mix credo --strict
+
+      - name: Dialyzer
+        run: mix dialyzer --format github
+
+      - name: Build docs without warnings
+        run: mix docs --warnings-as-errors
