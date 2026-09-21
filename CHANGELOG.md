@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-20
+
+Maintenance release. No API or behavior changes.
+
+### Fixed
+
+- Dropped the stale `poison` entry left in `mix.lock` by the 0.2.0 dependency
+  removal. It never reached users — `mix.lock` is not part of the published
+  package — but it made `mix deps.get` fetch a dependency the project no longer
+  declares.
+
 ## [0.2.0] - 2026-09-20
 
 `dowser_client` now has **no dependencies at all**, optional ones included, and
