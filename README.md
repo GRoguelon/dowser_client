@@ -482,21 +482,41 @@ See `Dowser.Client.HTTP.SSL` for the full contract.
 
 ### Retries
 
-Requests retry automatically on transient failures — connection errors
-(refused, closed, timed out, unreachable) and retryable HTTP statuses (`429`,
-`502`, `503`, `504`) — for every HTTP method, using exponential backoff with
-full jitter.
+Requests retry automatically on transient failures, using exponential backoff
+with full jitter — but only when the retry is safe. What that means depends on
+how the request failed:
 
-Default policy: `max_attempts: 3`, `base_delay_ms: 200`, `max_delay_ms: 2_000`,
-`retryable_statuses: [429, 502, 503, 504]`.
+  * **It never reached the server** (refused, unresolvable, unreachable) or
+    **the server rejected it** (`429`, `503`): nothing was applied, so the
+    request is always retried.
+  * **Ambiguous** (a timeout, a connection dropped in flight, `502`/`504`): the
+    request may have been applied, with no answer to say so, so it is retried
+    only when it is idempotent.
+
+`:idempotent` defaults to the method — `GET`, `HEAD`, `PUT`, `DELETE`,
+`OPTIONS` and `TRACE` yes, `POST` and `PATCH` no — which is what stops a
+timed-out `POST /_bulk` from indexing everything twice. A caller who knows
+better overrides it:
 
 ```elixir
+# A search is a POST, but it writes nothing
+Dowser.Client.request(:post, "/_search", query, retry: [idempotent: true])
+
 # Override any key
 Dowser.Client.request(:post, "/_bulk", docs, retry: [max_attempts: 5])
 
 # Disable retries for this request
 Dowser.Client.request(:get, "/_search", nil, retry: false)
 ```
+
+A `Retry-After` response header (seconds or HTTP date) is obeyed in place of
+the computed backoff, up to `:max_retry_after_ms`; `:max_elapsed_ms` bounds the
+whole request in wall-clock time, however many attempts are left.
+
+Default policy: `max_attempts: 3`, `max_elapsed_ms: nil`, `base_delay_ms: 200`,
+`max_delay_ms: 2_000`, `retryable_statuses: [429, 503]`,
+`ambiguous_statuses: [502, 504]`, `respect_retry_after: true`,
+`max_retry_after_ms: 60_000`.
 
 ## Installation
 

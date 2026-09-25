@@ -23,8 +23,9 @@ defmodule Dowser.Client.Request do
       `:headers`, kept as its own field — see above), plus the resolved
       `:profile` and `:profile_opts`. Handed straight to
       `Dowser.Client.HTTP.request/5`.
-    * **retry** — the resolved retry policy, from `opts[:retry]`; see
-      `Dowser.Client.Retry`.
+    * **retry** — the resolved retry policy, from `opts[:retry]` and the
+      method (which decides whether the request is idempotent, and so what may
+      be retried); see `Dowser.Client.Retry`.
 
   ## Formats
 
@@ -119,7 +120,7 @@ defmodule Dowser.Client.Request do
          {:ok, decoder} <- fetch_decoder(context, opts),
          {:ok, encoder} <- fetch_encoder(context, opts),
          {:ok, encode} <- fetch_encode(opts),
-         {:ok, retry} <- Retry.resolve(opts),
+         {:ok, retry} <- Retry.resolve(opts, method),
          {:ok, encoded_body} <-
            encode_body(body, req_format, encoder, encode) do
       {http_opts, headers} = resolve_http_opts(context, req_format, resp_format, opts)
