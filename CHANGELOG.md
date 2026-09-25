@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - Unreleased
+
+### Changed
+
+- **A retry can no longer repeat a write the server already applied.**
+  `Dowser.Client.Retry` retried every failure it called transient, for every
+  method — including a timeout or a `504`, where the request may well have been
+  applied and only the answer was lost. A timed-out `POST /_bulk` or auto-id
+  `POST /_doc` was re-sent, and the documents written twice.
+
+  Failures are now classified by what they say about the request:
+
+  | Failure | Retried |
+  | --- | --- |
+  | Never reached the server (`:econnrefused`, `:nxdomain`, `:enetunreach`, `:ehostunreach`, `{:failed_connect, _}`) | always |
+  | Rejected by the server (`:retryable_statuses`, now `[429, 503]`) | always |
+  | Ambiguous (`:timeout`, `:etimedout`, `:econnreset`, `:closed`, `:socket_closed_remotely`, and `:ambiguous_statuses`, `[502, 504]`) | only when idempotent |
+
+  `:idempotent` defaults to the method (`GET`, `HEAD`, `PUT`, `DELETE`,
+  `OPTIONS`, `TRACE` → `true`; `POST`, `PATCH` → `false`) and is overridable
+  per request, which is how a read that happens to be a `POST` keeps its
+  retries:
+
+  ```elixir
+  Dowser.Client.request(:post, "/_search", query, retry: [idempotent: true])
+  ```
+
+  `502` and `504` moved out of `:retryable_statuses` into the new
+  `:ambiguous_statuses`, so the default policy retries fewer things for a
+  non-idempotent request and exactly as many for an idempotent one.
+
+### Added
+
+- **`Retry-After` is obeyed.** A `429`/`503` that names a delay — in seconds or
+  as an HTTP date — is waited out as asked rather than on the computed backoff,
+  up to `:max_retry_after_ms` (default `60_000`), past which the request gives
+  up instead of sleeping. Turn it off with `respect_retry_after: false`.
+
+- **`:max_elapsed_ms`**, a wall-clock budget for the whole request (default
+  `nil`, no budget). Three attempts two seconds apart is the wrong shape for a
+  `429` burst; a budget bounds what the caller waits for, however many attempts
+  the policy allows.
+
+- `Dowser.Client.Retry.ambiguous?/1`, which says whether a failure leaves it
+  unknown that the request was applied.
+
+- `Dowser.Client.Retry.resolve/2` takes the request method, to derive
+  `:idempotent`. The one-argument form still works and assumes a
+  non-idempotent request.
+
 ## [0.2.1] - 2026-09-20
 
 Maintenance release. No API or behavior changes.
