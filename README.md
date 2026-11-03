@@ -446,6 +446,23 @@ Dowser.Client.request(:get, "/_search", nil, http_opts: [timeout: 5_000])
 last into `:httpc`'s own two option lists. An unrecognized key is an error
 (`{:unknown_http_opts, keys}`) rather than a silently ignored setting.
 
+### Compression
+
+`:httpc` neither asks for a compressed response nor decompresses one.
+`http_opts: [compressed: true]` does both: it sends `accept-encoding: gzip`
+(unless the request already names an encoding) and decompresses a gzipped
+response before it is decoded. Search responses are repetitive JSON that gzip
+shrinks several times over, so wherever the network is slower than the cluster
+— a VPN, another region — it is the larger part of the time a request takes:
+
+```elixir
+config :dowser_client,
+  contexts: [default: [endpoint: "https://search.example.com", http_opts: [compressed: true]]]
+```
+
+A gzipped response is decompressed whether or not it was asked for. One whose
+body isn't valid gzip returns `{:error, :invalid_gzip_body}`.
+
 ### TLS
 
 An `https://` endpoint is verified by default: the chain against the OS trust

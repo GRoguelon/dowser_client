@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-11-02
+
+### Added
+
+- **Compressed responses: `http_opts: [compressed: true]`.** `:httpc` neither
+  asks for a compressed response nor decompresses one, so every response came
+  over the wire as plain JSON. With the option, a request sends
+  `accept-encoding: gzip` (unless it already names an encoding), and the
+  response is decompressed before it is decoded, its `content-encoding` and
+  `content-length` headers dropped with the compressed payload. A page of 100
+  large search hits went from 4.2 MB to 568 KB, and from 8.7 s to 1.7 s over a
+  VPN.
+
+  A gzipped response is decompressed even when it wasn't asked for, and one
+  whose body isn't valid gzip returns `{:error, :invalid_gzip_body}`. The option
+  is off by default.
+
 ## [0.3.0] - 2026-09-25
 
 ### Changed
