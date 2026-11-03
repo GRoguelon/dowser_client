@@ -2,7 +2,7 @@ defmodule Dowser.Client.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_client"
-  @version "0.3.1"
+  @version "0.4.0"
 
   def project do
     [
@@ -24,7 +24,7 @@ defmodule Dowser.Client.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :inets, :ssl]
+      extra_applications: [:crypto, :logger, :inets, :ssl]
     ]
   end
 
@@ -77,10 +77,26 @@ defmodule Dowser.Client.MixProject do
           Dowser.Client.Encoder,
           Dowser.CoreExt.Keyable
         ],
+        Mappings: [
+          Dowser.Codec,
+          Dowser.Envelope,
+          Dowser.Source,
+          Dowser.MappingCacher
+        ],
+        Types: [
+          Dowser.Type,
+          Dowser.Type.Binary,
+          Dowser.Type.Date,
+          Dowser.Type.DateRange,
+          Dowser.Type.GeoPoint,
+          Dowser.Type.IP,
+          Dowser.Type.Range
+        ],
         Errors: [
           Dowser.Client.Error,
           Dowser.Client.HTTP.Error,
-          Dowser.Client.JSON.Error
+          Dowser.Client.JSON.Error,
+          Dowser.MappingError
         ]
       ]
     ]
@@ -89,6 +105,8 @@ defmodule Dowser.Client.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:telemetry, "~> 1.2", optional: true},
+
       ## Dev
       {:credo, "~> 1.7", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: :dev, runtime: false},
