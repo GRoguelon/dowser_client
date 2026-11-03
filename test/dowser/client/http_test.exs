@@ -193,4 +193,66 @@ defmodule Dowser.Client.HTTPTest do
                Keyword.fetch(HTTP.Profile.info(:dowser_test_http)[:options], :max_sessions)
     end
   end
+
+  describe "compression" do
+    @gzipped :zlib.gzip(@body)
+    @gzip_response "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\nContent-Length: #{byte_size(@gzipped)}\r\n\r\n" <>
+                     @gzipped
+
+    test "compressed: true asks for gzip and decompresses the response" do
+      {port, server} = TCPTestServer.start(@gzip_response)
+
+      assert {:ok, %Response{status: 200, body: body, headers: headers}} =
+               HTTP.request(:get, "http://127.0.0.1:#{port}/", [], nil, compressed: true)
+
+      assert body == @body
+      refute Map.has_key?(headers, "content-encoding")
+      refute Map.has_key?(headers, "content-length")
+      assert headers["content-type"] == "application/json"
+
+      assert Task.await(server).headers["accept-encoding"] == "gzip"
+    end
+
+    test "compressed: true keeps an accept-encoding the request already names" do
+      {port, server} = TCPTestServer.start(@response)
+      url = "http://127.0.0.1:#{port}/"
+      headers = [{"Accept-Encoding", "identity"}]
+
+      assert {:ok, %Response{status: 200, body: @body}} =
+               HTTP.request(:get, url, headers, nil, compressed: true)
+
+      assert Task.await(server).headers["accept-encoding"] == "identity"
+    end
+
+    test "asks for nothing by default" do
+      {port, server} = TCPTestServer.start(@response)
+
+      assert {:ok, %Response{status: 200}} =
+               HTTP.request(:get, "http://127.0.0.1:#{port}/", [], nil, [])
+
+      refute Map.has_key?(Task.await(server).headers, "accept-encoding")
+    end
+
+    test "decompresses a gzipped response even when it wasn't asked for" do
+      {port, server} = TCPTestServer.start(@gzip_response)
+
+      assert {:ok, %Response{body: @body}} =
+               HTTP.request(:get, "http://127.0.0.1:#{port}/", [], nil, [])
+
+      Task.await(server)
+    end
+
+    test "a body that claims gzip but isn't is an error" do
+      response =
+        "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: #{byte_size(@body)}\r\n\r\n" <>
+          @body
+
+      {port, server} = TCPTestServer.start(response)
+
+      assert {:error, :invalid_gzip_body} =
+               HTTP.request(:get, "http://127.0.0.1:#{port}/", [], nil, compressed: true)
+
+      Task.await(server)
+    end
+  end
 end

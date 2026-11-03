@@ -30,6 +30,12 @@ defmodule Dowser.Client.HTTP do
       — passed to `:httpc` as `Options`.
     * `:http_options` / `:options` — escape hatches merged last into `:httpc`'s
       two option lists, for anything not named above.
+    * `:compressed` — `true` asks for a gzip-compressed response
+      (`accept-encoding: gzip`, unless the request already names an encoding)
+      and decompresses one before it is decoded; default `false`. A search
+      response is repetitive JSON that compresses several times over, which
+      matters wherever the network, not the cluster, is the bottleneck.
+      `:httpc` does neither on its own.
 
   An unrecognized key is an error (`{:unknown_http_opts, keys}`) rather than a
   silently ignored setting.
@@ -108,12 +114,16 @@ defmodule Dowser.Client.HTTP do
 
   defp perform(method, url, headers, body, opts) do
     {profile, profile_opts, opts} = pop_profile(opts)
+    {compressed?, opts} = Keyword.pop(opts, :compressed, false)
     {method, body} = resolve_method(method, body, url)
+    headers = accept_encoding(headers, compressed?)
 
     with {:ok, profile} <- Profile.ensure_started(profile, profile_opts),
          {:ok, http_options, options} <- split_opts(url, opts),
          {:ok, request} <- build_request(method, url, headers, body) do
-      send_request(method, request, http_options, options, profile)
+      method
+      |> send_request(request, http_options, options, profile)
+      |> decompress()
     end
   end
 
@@ -147,6 +157,32 @@ defmodule Dowser.Client.HTTP do
 
       {:error, {:profile_down, reason}}
   end
+
+  ## Private functions — compression
+
+  # A request that already names an encoding keeps its own.
+  defp accept_encoding(headers, true) do
+    if Enum.any?(headers, fn {name, _value} -> String.downcase(name) == "accept-encoding" end) do
+      headers
+    else
+      headers ++ [{"accept-encoding", "gzip"}]
+    end
+  end
+
+  defp accept_encoding(headers, false), do: headers
+
+  # Whatever asked for it, a gzipped body is decompressed here, before the
+  # decode phase reads it as JSON: the headers that described the compressed
+  # payload go with it.
+  defp decompress({:ok, %Response{headers: %{"content-encoding" => "gzip"}} = response}) do
+    headers = Map.drop(response.headers, ["content-encoding", "content-length"])
+
+    {:ok, %Response{response | headers: headers, body: :zlib.gunzip(response.body)}}
+  rescue
+    ErlangError -> {:error, :invalid_gzip_body}
+  end
+
+  defp decompress(result), do: result
 
   ## Private functions — method & body
 
