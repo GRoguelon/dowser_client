@@ -383,6 +383,82 @@ The mock replaces the whole transport — encoding, decoding and casting
 included — so the body it returns is exactly what the caller gets. To test
 the casting too, stub the HTTP layer as above.
 
+#### Mock the repo with Mimic
+
+[Mimic](https://hexdocs.pm/mimic) stubs the functions of an existing module,
+per test process. A test-only repo module becomes the default repo in the test
+environment, so the code under test — which names no repo — talks to it, and
+each test says what `request/4` answers. `request/4` is the one function every
+API call goes through.
+
+```elixir
+# mix.exs
+defp deps do
+  [
+    # ...
+    {:mimic, "~> 1.10", only: :test}
+  ]
+end
+
+defp elixirc_paths(:test), do: ["lib", "test/support"]
+defp elixirc_paths(_env), do: ["lib"]
+```
+
+```elixir
+# test/support/search_mock.ex — a repo like any other, compiled for tests only
+defmodule MyApp.SearchMock do
+  use Dowser.OpenSearch.Repo, otp_app: :my_app
+end
+```
+
+```elixir
+# config/test.exs — the default repo is the mock in tests
+config :my_app, MyApp.SearchMock, endpoint: "http://search.test"
+config :dowser_opensearch, default_repo: MyApp.SearchMock
+```
+
+```elixir
+# test/test_helper.exs
+Mimic.copy(MyApp.SearchMock)
+ExUnit.start()
+```
+
+```elixir
+defmodule MyApp.PostsTest do
+  use ExUnit.Case, async: true
+  use Mimic
+
+  test "searches the posts" do
+    expect(MyApp.SearchMock, :request, fn :post, "/posts/_search", _query, _opts ->
+      {:ok, %Dowser.Client.Response{status: 200, headers: %{}, body: %{"hits" => %{"hits" => []}}}}
+    end)
+
+    # MyApp.Posts.search/1 calls Dowser.OpenSearch.Search.search(query, index: "posts"),
+    # with no :repo — so it goes to the default repo, the mock.
+    assert {:ok, %{"hits" => %{"hits" => []}}} = MyApp.Posts.search("hello")
+  end
+end
+```
+
+A few things to know:
+
+- The stub stands in for the whole transport, so the body it returns is what
+  the caller gets — nothing is decoded or cast. Let the request through with
+  `call_original/3` where the casting matters, or stub the HTTP layer instead.
+- Mimic stubs are per process, which keeps `async: true` tests apart. A request
+  made from another process — a `Task`, a GenServer — needs
+  `Mimic.allow(MyApp.SearchMock, self(), pid)`, or `set_mimic_global` in a test
+  that isn't async.
+- Mimic replaces calls *into* the module. The repo's own verbs
+  (`MyApp.SearchMock.get/2`, …) reach `request/4` from inside it, so a test
+  calling them directly stubs the verb it calls.
+- Calls that name a repo (`repo: MyApp.Search`) bypass the default: point
+  `repo:` at the same mock in tests, or have the code read its repo from
+  configuration.
+
+With `dowser_elasticsearch`, the same goes for `use Dowser.Elasticsearch.Repo`
+and `config :dowser_elasticsearch, default_repo: ...`.
+
 ## HTTP configuration
 
 Requests go over `:httpc`, pinned to HTTP/1.1 with keep-alive, with
