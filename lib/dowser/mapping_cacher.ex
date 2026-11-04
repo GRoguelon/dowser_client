@@ -326,7 +326,14 @@ defmodule Dowser.MappingCacher do
   @doc "Invalidates a single `{context, index}` entry of `server`."
   @spec invalidate(atom(), Dowser.Repo.t(), term()) :: :ok
   def invalidate(server, context, index) do
-    GenServer.call(server, {:invalidate, context, index})
+    case Config.resolve(context) do
+      {:ok, config} ->
+        GenServer.call(server, {:invalidate, config, index})
+
+      # No repo to resolve, so nothing could have been cached under it.
+      {:error, _reason} ->
+        :ok
+    end
   end
 
   @doc "Clears the whole cache of `server`."
@@ -337,7 +344,7 @@ defmodule Dowser.MappingCacher do
 
   @impl GenServer
   def init({server, opts}) do
-    :ets.new(server, [:named_table, :set, :protected, read_concurrency: true])
+    ^server = :ets.new(server, [:named_table, :set, :protected, read_concurrency: true])
 
     state = %{
       table: server,
@@ -348,7 +355,7 @@ defmodule Dowser.MappingCacher do
       inflight: %{}
     }
 
-    schedule_sweep(state.sweep_interval)
+    :ok = schedule_sweep(state.sweep_interval)
     {:ok, state, {:continue, :warm}}
   end
 
@@ -369,27 +376,22 @@ defmodule Dowser.MappingCacher do
 
       :miss ->
         state = add_waiter(state, key, from)
-
-        if first_waiter?(state, key) do
-          start_fetch(state.fetch, key, context, index)
-        end
+        :ok = maybe_start_fetch(state, key, context, index)
 
         {:noreply, state}
     end
   end
 
-  def handle_call({:put, context, index, mapping, ttl}, _from, state) do
-    with {:ok, resolved} <- Config.resolve(context) do
-      store(state.table, key(resolved, index), mapping, to_native(ttl))
-    end
+  # Both receive the repo already resolved: `put/4` and `invalidate/3` resolve
+  # it in the caller's process, where a repo that can't be resolved is reported.
+  def handle_call({:put, %Config{} = config, index, mapping, ttl}, _from, state) do
+    true = store(state.table, key(config, index), mapping, to_native(ttl))
 
     {:reply, :ok, state}
   end
 
-  def handle_call({:invalidate, context, index}, _from, state) do
-    with {:ok, resolved} <- Config.resolve(context) do
-      :ets.delete(state.table, key(resolved, index))
-    end
+  def handle_call({:invalidate, %Config{} = config, index}, _from, state) do
+    true = :ets.delete(state.table, key(config, index))
 
     {:reply, :ok, state}
   end
@@ -422,7 +424,7 @@ defmodule Dowser.MappingCacher do
   def handle_info(:sweep, state) do
     now = System.monotonic_time()
     :ets.select_delete(state.table, [{{:_, :_, :"$1"}, [{:"=<", :"$1", now}], [true]}])
-    schedule_sweep(state.sweep_interval)
+    :ok = schedule_sweep(state.sweep_interval)
     {:noreply, state}
   end
 
@@ -499,9 +501,21 @@ defmodule Dowser.MappingCacher do
   defp first_waiter?(state, key), do: length(Map.fetch!(state.inflight, key)) == 1
 
   # Fetch off the GenServer so it stays responsive to other keys' misses.
+  # Only the first caller waiting on a key starts its fetch; the others are
+  # replied to when it lands.
+  defp maybe_start_fetch(state, key, context, index) do
+    if first_waiter?(state, key) do
+      start_fetch(state.fetch, key, context, index)
+    else
+      :ok
+    end
+  end
+
   defp start_fetch(fetch, key, context, index) do
     parent = self()
-    spawn(fn -> send(parent, {:fetched, key, safe_fetch(fetch, context, index)}) end)
+    _pid = spawn(fn -> send(parent, {:fetched, key, safe_fetch(fetch, context, index)}) end)
+
+    :ok
   end
 
   defp safe_fetch(fetch, context, index) do
@@ -524,8 +538,11 @@ defmodule Dowser.MappingCacher do
   defp to_native(:infinity), do: to_native(@forever)
   defp to_native(ms), do: System.convert_time_unit(ms, :millisecond, :native)
 
-  defp schedule_sweep(interval) when is_integer(interval) and interval > 0,
-    do: Process.send_after(self(), :sweep, interval)
+  defp schedule_sweep(interval) when is_integer(interval) and interval > 0 do
+    _timer = Process.send_after(self(), :sweep, interval)
+
+    :ok
+  end
 
   defp schedule_sweep(_disabled), do: :ok
 
