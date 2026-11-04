@@ -381,25 +381,30 @@ defmodule Dowser.Repo do
   def request(repo, method, path, body, opts) do
     opts = Keyword.delete(opts, :repo)
 
-    case repo do
-      {module, name} when is_atom(name) ->
-        if repo?(module) do
-          module.with_dynamic_repo(name, fn -> module.request(method, path, body, opts) end)
-        else
-          Dowser.Client.request(method, path, body, Keyword.put(opts, :repo, repo))
-        end
+    case target(repo) do
+      {:instance, module, name} ->
+        module.with_dynamic_repo(name, fn -> module.request(method, path, body, opts) end)
 
-      module when is_atom(module) ->
-        if repo?(module) or implements_request?(module) do
-          module.request(method, path, body, opts)
-        else
-          Dowser.Client.request(method, path, body, Keyword.put(opts, :repo, repo))
-        end
+      {:module, module} ->
+        module.request(method, path, body, opts)
 
-      other ->
-        Dowser.Client.request(method, path, body, Keyword.put(opts, :repo, other))
+      :client ->
+        Dowser.Client.request(method, path, body, Keyword.put(opts, :repo, repo))
     end
   end
+
+  # Where a request for `repo` goes: one of a repo's instances, a module that
+  # answers requests itself (a repo, or a mock of one), or `Dowser.Client` for
+  # anything else — an ad-hoc repo, or a term it will report as no repo.
+  defp target({module, name}) when is_atom(module) and is_atom(name) do
+    if repo?(module), do: {:instance, module, name}, else: :client
+  end
+
+  defp target(module) when is_atom(module) do
+    if repo?(module) or implements_request?(module), do: {:module, module}, else: :client
+  end
+
+  defp target(_repo), do: :client
 
   # A module implementing `c:request/4` without `use Dowser.Repo` — a mock of
   # this behaviour, in a test. It answers requests; it has no configuration to

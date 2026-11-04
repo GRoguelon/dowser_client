@@ -2,6 +2,7 @@ defmodule Dowser.CodecTest do
   use ExUnit.Case, async: false
 
   alias Dowser.Codec
+  alias Dowser.Repo.Config
   alias Dowser.TestPost
 
   # A backend's configuration: mappings come from Dowser.TestMappings, standing
@@ -78,7 +79,7 @@ defmodule Dowser.CodecTest do
     test "a mapping cacher that isn't started is a failure, not a silent identity" do
       config = %{@config | cacher: Dowser.TestCacher}
       body = %{"_index" => "posts", "_source" => %{"ip" => "127.0.0.1"}}
-      repo_config = Dowser.Repo.Config.new(endpoint: "http://x:9200")
+      repo_config = Config.new(endpoint: "http://x:9200")
 
       error =
         assert_raise Dowser.MappingError, fn ->

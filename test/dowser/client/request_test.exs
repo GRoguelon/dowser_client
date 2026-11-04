@@ -13,10 +13,10 @@ end
 defmodule Dowser.Client.RequestTest do
   use ExUnit.Case, async: false
 
-  alias Dowser.Repo.Config
   alias Dowser.Client.Error
   alias Dowser.Client.JSON.Error, as: JSONError
   alias Dowser.Client.Request
+  alias Dowser.Repo.Config
 
   defp context(opts \\ []) do
     Config.new(Keyword.merge([endpoint: "http://es:9200"], opts))

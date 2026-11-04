@@ -54,7 +54,6 @@ defmodule Dowser.Client.Request do
 
   require Logger
 
-  alias Dowser.Repo.Config
   alias Dowser.Client.Decoder
   alias Dowser.Client.Encoder
   alias Dowser.Client.Error
@@ -64,6 +63,7 @@ defmodule Dowser.Client.Request do
   alias Dowser.Client.JSON
   alias Dowser.Client.NDJSON
   alias Dowser.Client.Retry
+  alias Dowser.Repo.Config
 
   ## Structure
 
@@ -160,8 +160,9 @@ defmodule Dowser.Client.Request do
   # *where* a request goes — `:config` (0.1), `:context` (0.3) and
   # `:http_adapter` — are errors: ignoring one would quietly send the request
   # somewhere the caller didn't ask for. So is the backend packages' `:codec`
-  # (0.3), now `:types`: ignoring it would quietly leave every value uncast. The rest only shape a body, so they
-  # warn and the request proceeds; see UPGRADE_GUIDE_0_2.md.
+  # (0.3), now `:types`: ignoring it would quietly leave every value uncast.
+  # The rest only shape a body, so they warn and the request proceeds; see
+  # UPGRADE_GUIDE_0_2.md.
   @rejected_options [:config, :context, :codec, :http_adapter]
 
   @deprecated_options [:codec_adapter, :codec_opts, :json_adapter, :json_opts]

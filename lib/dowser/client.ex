@@ -70,12 +70,12 @@ defmodule Dowser.Client do
     * `:retry` — retry policy for transient failures; see `Dowser.Client.Retry`.
   """
 
-  alias Dowser.Repo.Config
   alias Dowser.Client.Error
   alias Dowser.Client.HTTP.Error, as: HTTPError
   alias Dowser.Client.Request
   alias Dowser.Client.Response
   alias Dowser.Client.Retry
+  alias Dowser.Repo.Config
 
   ## Typespecs
 

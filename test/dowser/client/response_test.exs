@@ -1,11 +1,11 @@
 defmodule Dowser.Client.ResponseTest do
   use ExUnit.Case, async: true
 
-  alias Dowser.Repo.Config
   alias Dowser.Client.Error
   alias Dowser.Client.JSON.Error, as: JSONError
   alias Dowser.Client.Request
   alias Dowser.Client.Response
+  alias Dowser.Repo.Config
 
   defp response(body), do: %Response{status: 200, body: body}
 

@@ -2,13 +2,13 @@ defmodule Dowser.ClientTest do
   use ExUnit.Case, async: false
 
   alias Dowser.Client
-  alias Dowser.Repo.Config
   alias Dowser.Client.Error
   alias Dowser.Client.HTTP.Error, as: HTTPError
   alias Dowser.Client.HTTP.FakeTransport
   alias Dowser.Client.JSON.Error, as: JSONError
   alias Dowser.Client.Response
   alias Dowser.Client.TCPTestServer
+  alias Dowser.Repo.Config
 
   @body ~s({"ok":true})
   @response "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{byte_size(@body)}\r\n\r\n" <>
