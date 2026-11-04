@@ -13,7 +13,7 @@ What it doesn't know is any particular engine's API — its endpoints, its
 query language, its mapping types. That lives in a package per engine, built
 on this one:
 [`dowser_elasticsearch`](https://github.com/GRoguelon/dowser_elasticsearch) and
-[`dowser_opensearch`](https://github.com/GRoguelon/dowser_open_search).
+[`dowser_opensearch`](https://github.com/GRoguelon/dowser_opensearch).
 
 **Install the backend package you need, not `dowser_client` directly.** It
 pulls `dowser_client` in for you; this README is for what you configure

@@ -15,7 +15,8 @@ defmodule Dowser.Client.MixProject do
       dialyzer: dialyzer(),
       package: package(),
       name: "Dowser.Client",
-      description: "Low-level HTTP/JSON transport shared by the Dowser search-engine clients",
+      description:
+        "Repos, HTTP/JSON transport and mapping-driven casting shared by the Dowser search-engine clients",
       source_url: @source_url,
       docs: docs()
     ]
@@ -48,7 +49,9 @@ defmodule Dowser.Client.MixProject do
       links: %{
         "GitHub" => @source_url,
         "Changelog" => "https://dowser-client.hexdocs.pm/changelog.html",
-        "Dowser.Elasticsearch" => "https://hex.pm/packages/dowser_elasticsearch"
+        "Upgrade guide" => "https://dowser-client.hexdocs.pm/upgrade_guide_0_4.html",
+        "Dowser.Elasticsearch" => "https://hex.pm/packages/dowser_elasticsearch",
+        "Dowser.OpenSearch" => "https://hex.pm/packages/dowser_opensearch"
       }
     ]
   end
