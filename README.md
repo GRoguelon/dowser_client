@@ -1,21 +1,24 @@
 # Dowser.Client
 
-`dowser_client` is the low-level HTTP/JSON transport shared by the Dowser
-family of search-engine clients. It knows how to talk to a search backend
-over HTTP, encode and decode request/response bodies, retry transient
-failures, and normalize errors — but it knows nothing about any particular
-search engine's API (queries, mappings, indices, etc.).
+`dowser_client` is the foundation shared by the Dowser family of search-engine
+clients. It holds what every backend needs the same way:
 
-That backend-specific knowledge lives in dedicated packages built on top of
-this one, such as
-[`dowser_elasticsearch`](https://github.com/GRoguelon/dowser_elasticsearch),
-which implements one database's search API using `dowser_client` as its
-transport. Similar packages for other NoSQL search databases are planned but not
-yet ready for use.
+  * **repos** — one module per cluster, configured and supervised like an
+    `Ecto.Repo` (`Dowser.Repo`);
+  * **the transport** — HTTP over `:httpc`, JSON, retries, TLS, errors;
+  * **mapping-driven casting** — turning a document's JSON into Elixir terms
+    and back, from its index mapping: dates, ranges, IP addresses, structs.
 
-**Install `dowser_elasticsearch` (or whichever backend package you need), not
-`dowser_client` directly.** `dowser_client` is a dependency those packages
-pull in for you; it isn't meant to be used stand-alone in application code.
+What it doesn't know is any particular engine's API — its endpoints, its
+query language, its mapping types. That lives in a package per engine, built
+on this one:
+[`dowser_elasticsearch`](https://github.com/GRoguelon/dowser_elasticsearch) and
+[`dowser_opensearch`](https://github.com/GRoguelon/dowser_open_search).
+
+**Install the backend package you need, not `dowser_client` directly.** It
+pulls `dowser_client` in for you; this README is for what you configure
+through it — repos, HTTP, casting — and for anyone writing a backend
+package.
 
 ## Why it exists
 
@@ -30,12 +33,13 @@ It needs Elixir 1.18+ (for the built-in `JSON` module) and OTP 26+ — TLS
 verification reads the OS trust store through `:public_key.cacerts_get/0`, which
 exists from OTP 25, but 26 is the oldest release CI covers.
 
-`dowser_client` has **no dependencies**. HTTP is OTP's own `:httpc` — every
-search backend it targets speaks HTTP/1.1, which is exactly what `:httpc` does —
-sent through its own `:dowser_client` profile (connection pool, keep-alive
-settings, cookie store) rather than `:httpc`'s shared `:default` one, with a
-separate profile per cluster when you want one. JSON is Elixir's built-in `JSON`
-module — no `Jason`, no `Poison`, nothing to pick.
+`dowser_client` has **no required dependencies**. HTTP is OTP's own `:httpc` —
+every search backend it targets speaks HTTP/1.1, which is exactly what
+`:httpc` does — sent through a profile of its own per repo (connection pool,
+keep-alive settings, cookie store) rather than `:httpc`'s shared `:default`
+one. JSON is Elixir's built-in `JSON` module — no `Jason`, no `Poison`,
+nothing to pick. `:telemetry` is optional: where your application has it, a
+mapping that couldn't be fetched emits an event.
 
 ## How it works
 
@@ -129,12 +133,11 @@ bulk-style newline-delimited payloads, or `:raw` to pass bytes through
 untouched. `:req_format`/`:resp_format` set each direction independently.
 
 A `:json`/`:ndjson` response body is always JSON-decoded into plain,
-**string-keyed** terms, and that is where `dowser_client` stops. Casting a value
-beyond JSON — `"2026-09-19"` into `~D[2026-09-19]` — means knowing where
-documents sit in the envelope, which index each came from, and what that index'
-mapping says. All of that is one particular search engine's API, which
-`dowser_client` knows nothing about. So the second pass is a black box the
-backend package supplies:
+**string-keyed** terms first. Casting a value beyond JSON — `"2026-09-19"` into
+`~D[2026-09-19]` — is an optional second pass, configured on the repo or the
+request. The backend packages' codecs plug into it, built on the casting
+described in [Mapping-driven casting](#mapping-driven-casting) below; a
+decoder of your own can too:
 
   * `:keys` — `:strings` (default, no casting), `:atoms`, `:atoms!`, or any
     `(String.t() -> term)` function. `:atoms!` uses `String.to_existing_atom/1`,
@@ -161,15 +164,16 @@ repo's outright, options included.
 
 ```elixir
 Dowser.Client.get("/articles/_search",
+  repo: MyApp.Search,
   keys: :atoms,
-  decoder: Dowser.Elasticsearch.Decoder
+  decoder: Dowser.Elasticsearch.Codec
 )
 
 #=> {:ok, %Dowser.Client.Response{body: %{hits: %{hits: [
 #=>   %{_index: "articles", _id: "1", _source: %{
 #=>     title: "hello",
 #=>     published_at: ~D[2026-09-19],
-#=>     run_window: %{"gte" => ~D[2026-09-01], "lte" => ~D[2026-09-30]}
+#=>     run_window: Date.range(~D[2026-09-01], ~D[2026-09-30])
 #=>   }}
 #=> ]}}}}
 ```
@@ -197,18 +201,20 @@ or a suggester. So build queries in the shape the backend expects, and tell
 ```elixir
 # the body is the source
 Dowser.Client.put("/articles/_doc/1", document,
-  encoder: {Dowser.Elasticsearch.Encoder, index: "articles"},
+  repo: MyApp.Search,
+  encoder: {Dowser.Elasticsearch.Codec, index: "articles"},
   encode: true
 )
 
 # a partial update: the source is under "doc"
 Dowser.Client.post("/articles/_update/1", %{"doc" => partial},
-  encoder: {Dowser.Elasticsearch.Encoder, index: "articles"},
+  repo: MyApp.Search,
+  encoder: {Dowser.Elasticsearch.Codec, index: "articles"},
   encode: ["doc"]
 )
 
 # a search: nothing to encode, so :encode is simply not passed
-Dowser.Client.post("/articles/_search", query)
+Dowser.Client.post("/articles/_search", query, repo: MyApp.Search)
 ```
 
 An encoder whose options never vary — one that resolves the index from the
@@ -229,89 +235,56 @@ def encode(%{"index" => _action} = line, _opts), do: line
 def encode(document, opts), do: cast(document, opts[:index])
 
 # ... or let a path do it: every line with a "doc" is encoded, the rest skipped
-Dowser.Client.post("/_bulk", entries, format: :ndjson, encode: ["doc"])
+Dowser.Client.post("/_bulk", entries, repo: MyApp.Search, format: :ndjson, encode: ["doc"])
 ```
 
 A response decoded as `:ndjson` reaches the decoder the same way, entry by
 entry.
 
-`Date`, `Time`, `NaiveDateTime` and `DateTime` need no encoder at all — Elixir's
-`JSON` already writes them as ISO 8601. An encoder is for shapes JSON has no
-opinion about (`Date.Range`, `Decimal`) or a format the mapping dictates. The
+`Date`, `Time`, `NaiveDateTime` and `DateTime` encode on their own — Elixir's
+`JSON` writes them as ISO 8601 — but only an encoder writes them in the format
+and precision the mapping declares. An encoder is also for shapes JSON has no
+opinion about (`Date.Range`, `{lat, lon}`, `Decimal`). The
 pass is skipped for a `nil` or `:raw` body, and a raising encoder comes back as
 `{:error, %Dowser.Client.Error{reason: {:encode_failed, exception}}}`.
 
-### What a decoder and encoder look like
+### Mapping-driven casting
 
-`dowser_client` never inspects a value, so both hooks are ordinary modules in the
-backend package. A decoder walks its own envelope — it is the only place that
-knows a hit carries its index, and therefore which mapping to cast it against:
+The backend packages' codecs (`Dowser.Elasticsearch.Codec`,
+`Dowser.OpenSearch.Codec`) are thin configurations of `Dowser.Codec`, the
+casting engine that lives here. It is split by concern, one module each:
 
-```elixir
-defmodule Dowser.Elasticsearch.Decoder do
-  def decode(body, opts), do: do_decode(body, Keyword.fetch!(opts, :key_fn))
+| Module | Concern |
+| --- | --- |
+| `Dowser.Envelope` | a response body: finding the documents in it — hits, `_source`, `inner_hits` |
+| `Dowser.Source` | one document: objects, nested fields, arrays, structs — the mapping decides what a value is, never its shape |
+| `Dowser.Type`, `Dowser.Type.*` | one leaf value: a date, a range, an IP address, a `geo_point` |
+| `Dowser.Mapping` | where a mapping comes from — implemented by `Dowser.MappingCacher` (the cluster's, cached) |
+| `Dowser.Schema` | a document module: its struct, and how to load and dump it |
 
-  # A hit carries its own index, so the mapping to cast it against can be
-  # resolved right here.
-  defp do_decode(%{"_index" => index, "_source" => _source} = hit, key_fn) do
-    Map.new(hit, fn
-      {"_source" = key, source} -> {key_fn.(key), decode_source(source, index, key_fn)}
-      {key, value} -> {key_fn.(key), do_decode(value, key_fn)}
-    end)
-  end
+Five options decide how documents are cast, per request, on the codec, or in
+the backend's application environment:
 
-  defp do_decode(value, key_fn) when is_non_struct_map(value) do
-    Map.new(value, fn {key, value} -> {key_fn.(key), do_decode(value, key_fn)} end)
-  end
+  * `:mapping` — where the mapping comes from: a map, a `Dowser.Mapping`
+    module, or a document module. Defaults to the backend's mapping cacher,
+    which the application starts in its supervision tree.
+  * `:struct` — load each document into a document module's struct, and dump
+    it back. `:keys` casts the envelope around it, never its fields.
+  * `:types` — the `Dowser.Type` module leaf values go through.
+  * `:unknown_fields` — `:keep` a field the mapping doesn't declare, or
+    `:raise` a `Dowser.UnknownFieldError`.
+  * `:mapping_failure` — `:error`, `:warn` or `:ignore` when the mapping can't
+    be fetched.
 
-  defp do_decode(value, key_fn) when is_list(value), do: Enum.map(value, &do_decode(&1, key_fn))
-  defp do_decode(value, _key_fn), do: value
+Only nine date formats are cast — those an Elixir function reads exactly, to
+a `Date`, `Time`, `NaiveDateTime` or UTC `DateTime`; see `Dowser.Type.Date`.
+Any other value its type doesn't recognize comes back as stored.
 
-  defp decode_source(source, index, key_fn) do
-    {:ok, %{"properties" => properties}} = MappingCache.fetch(index)
-
-    Enum.reduce(properties, %{}, fn {field, options}, acc ->
-      case Map.fetch(source, field) do
-        {:ok, value} -> Map.put(acc, key_fn.(field), load(value, options))
-        :error -> acc
-      end
-    end)
-  end
-
-  # Per-field casting, however that backend prefers to organise it.
-  defp load(value, %{"type" => "date"}) when is_binary(value) do
-    case Date.from_iso8601(value) do
-      {:ok, date} -> date
-      {:error, _reason} -> value
-    end
-  end
-
-  defp load(value, _options), do: value
-end
-```
-
-An encoder is the mirror: one function over a document source, given whatever it
-needs through its options.
-
-```elixir
-defmodule Dowser.Elasticsearch.Encoder do
-  def encode(source, opts) do
-    {:ok, %{"properties" => properties}} = MappingCache.fetch(opts[:index])
-
-    Map.new(source, fn {field, value} -> {field, dump(value, properties[field])} end)
-  end
-
-  defp dump(%Date{} = date, %{"type" => "date"}), do: Date.to_iso8601(date)
-  defp dump(value, _options), do: value
-end
-```
-
-`dowser_client` used to ship a `Dowser.Client.Field` behaviour and a
-`Codec.Builder` macro for that per-field layer. They are gone: nothing in the
-pipeline ever called them, and how a backend organises its own casting — a
-`cast/2` dispatcher, a `case` on `"type"`, or a protocol — is its business.
-`Dowser.CoreExt.Keyable.transform_keys/2` remains for a decoder that only needs
-the key half.
+A decoder or encoder of your own is still a plain module or function, as
+above — `Dowser.Source.load/3` and `Dowser.Source.dump/3` do the walking for
+one that only needs a different mapping source or type module, and
+`Dowser.CoreExt.Keyable.transform_keys/2` the key half for one that casts
+nothing.
 
 ### Transport
 
@@ -354,6 +327,14 @@ so callers only ever need to handle one set of shapes:
     `:socket_closed_remotely`, or a `{:failed_connect, _}` tuple, which is where
     a refused connection and a TLS `{:tls_alert, _}` both show up — plus the
     method, URL, profile and attempt count.
+  * `Dowser.MappingError` — the mapping a document had to be cast against
+    couldn't be fetched (or its cacher isn't started), under the default
+    `mapping_failure: :error`.
+  * `Dowser.UnknownFieldError` — a field the mapping doesn't declare, under
+    `unknown_fields: :raise`.
+
+The backend packages return the last two as themselves, not wrapped in the
+`Dowser.Client.Error` a failing decoder otherwise becomes.
 
 ### Testing
 
@@ -446,8 +427,8 @@ config :dowser_client, profile_opts: [max_sessions: 50, pipeline_timeout: 5_000]
 
 `Dowser.Client.HTTP.Profile.info/1` reports `:httpc`'s own view of a profile —
 its open sessions, queued requests and current options — or
-`{:error, {:not_started, name}}` before the first request has started it, since
-profiles are created on demand.
+`{:error, {:not_started, name}}` before its repo, or a first request, has
+started it.
 
 ### Headers
 
@@ -464,7 +445,10 @@ So a request can override anything — including the derived `content-type` — 
 repo header can override the `authorization` its own `:auth` produced.
 
 ```elixir
-Dowser.Client.post("/_search", query, http_opts: [headers: %{"x-opaque-id" => "trace-42"}])
+Dowser.Client.post("/_search", query,
+  repo: MyApp.Search,
+  http_opts: [headers: %{"x-opaque-id" => "trace-42"}]
+)
 ```
 
 ### Timeouts
@@ -475,7 +459,7 @@ Dowser.Client.post("/_search", query, http_opts: [headers: %{"x-opaque-id" => "t
 | receive | 30s | `http_opts: [timeout: ...]` |
 
 ```elixir
-Dowser.Client.request(:get, "/_search", nil, http_opts: [timeout: 5_000])
+Dowser.Client.request(:get, "/_search", nil, repo: MyApp.Search, http_opts: [timeout: 5_000])
 ```
 
 `:autoredirect`, `:proxy_auth`, `:relaxed`, `:full_result`, `:headers_as_is`,
@@ -557,13 +541,13 @@ better overrides it:
 
 ```elixir
 # A search is a POST, but it writes nothing
-Dowser.Client.request(:post, "/_search", query, retry: [idempotent: true])
+Dowser.Client.request(:post, "/_search", query, repo: MyApp.Search, retry: [idempotent: true])
 
 # Override any key
-Dowser.Client.request(:post, "/_bulk", docs, retry: [max_attempts: 5])
+Dowser.Client.request(:post, "/_bulk", docs, repo: MyApp.Search, retry: [max_attempts: 5])
 
 # Disable retries for this request
-Dowser.Client.request(:get, "/_search", nil, retry: false)
+Dowser.Client.request(:get, "/_search", nil, repo: MyApp.Search, retry: false)
 ```
 
 A `Retry-After` response header (seconds or HTTP date) is obeyed in place of
@@ -577,18 +561,18 @@ Default policy: `max_attempts: 3`, `max_elapsed_ms: nil`, `base_delay_ms: 200`,
 
 ## Installation
 
-Don't add `dowser_client` to your application directly. Add the
-backend-specific package instead — currently
-[`dowser_elasticsearch`](https://github.com/GRoguelon/dowser_elasticsearch):
+Don't add `dowser_client` to your application directly. Add the backend
+package for your engine instead:
 
 ```elixir
 def deps do
   [
-    {:dowser_elasticsearch, "~> 0.1.0"}
+    {:dowser_elasticsearch, "~> 0.5.0"}
+    # or {:dowser_opensearch, "~> 0.3.0"}
   ]
 end
 ```
 
-`dowser_elasticsearch` depends on `dowser_client` itself, so it's pulled in
-automatically. Other backend packages (Meilisearch, Typesense, and others)
-will follow the same pattern once they're ready.
+Each depends on `dowser_client` itself, so it's pulled in automatically.
+Other backend packages (Meilisearch, Typesense, and others) will follow the
+same pattern once they're ready.
