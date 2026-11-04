@@ -45,8 +45,8 @@ defmodule Dowser.Codec do
 
   ## Options
 
-  `dowser_client` always supplies `:context` (the request's repo, resolved into a
-  `Dowser.Client.Context`), and a decoder also gets `:key_fn` (the function
+  `dowser_client` always supplies `:repo_config` (the request's repo, resolved
+  into a `Dowser.Repo.Config`), and a decoder also gets `:key_fn` (the function
   `:keys` resolved to). The rest are the codec's own, given alongside it as
   `{Dowser.OpenSearch.Codec, opts}`, or per request:
 
@@ -195,7 +195,7 @@ defmodule Dowser.Codec do
   end
 
   defp lookup(index, opts, config) do
-    case config.cacher.lookup(Keyword.get(opts, :context), index) do
+    case config.cacher.lookup(Keyword.get(opts, :repo_config), index) do
       {:ok, mapping} ->
         mapping
 

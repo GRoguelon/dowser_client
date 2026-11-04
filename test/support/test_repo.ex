@@ -17,7 +17,7 @@ defmodule Dowser.TestRepo.WithInit do
 
   @impl true
   def init(type, config) do
-    send(Keyword.get(config, :test_pid, self()), {:init, type})
+    send(Keyword.get(config, :test_pid, self()), {:init, type, Keyword.fetch!(config, :name)})
 
     {:ok, Keyword.put(config, :auth, {:bearer, "from-init"})}
   end

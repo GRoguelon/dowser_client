@@ -1,13 +1,16 @@
-defmodule Dowser.Client.Context do
+defmodule Dowser.Repo.Config do
   @moduledoc """
-  One search backend to talk to, resolved: its `:endpoint`, `:auth`, the
-  `:httpc` profile to send through, and how to cast the responses it returns.
+  A repo's configuration, resolved: the `:endpoint` to talk to, the `:auth` to
+  send, the `:httpc` profile to send through, and how to cast the responses it
+  returns.
 
-  Applications don't build these by hand: they define a `Dowser.Repo` and pass
-  it as the `:repo` option, and the repo resolves its configuration into a
-  context. A script can pass the attributes of one directly instead:
+  It is what every `:repo` resolves into before a request is built — a repo
+  module, one of its dynamic instances, or the attributes of an ad-hoc repo:
 
       Dowser.Client.get("/_cluster/health", repo: [endpoint: "http://localhost:9200"])
+
+  `MyApp.Search.config/0` returns the one a repo is using, and a decoder or
+  encoder receives it as `:repo_config`.
 
   ## Fields
 
@@ -23,8 +26,9 @@ defmodule Dowser.Client.Context do
 
     * `:profile` — the `:httpc` profile requests go through, giving this
       backend its own connection pool and session settings. A `Dowser.Repo`
-      defaults it to the repo module itself; an ad-hoc context to
-      `:dowser_client`. See `Dowser.Client.HTTP.Profile`.
+      defaults it to the name it was started under (the repo module itself,
+      unless it is a dynamic instance); an ad-hoc repo to `:dowser_client`.
+      See `Dowser.Client.HTTP.Profile`.
     * `:profile_opts` — that profile's `:httpc.set_options/2` settings
       (`max_sessions`, `max_keep_alive_length`, `keep_alive_timeout`,
       `pipeline_timeout`, `cookies`, ...). Applied once, when the profile
@@ -45,16 +49,6 @@ defmodule Dowser.Client.Context do
       (`{MyEncoder, index: "articles"}`), casting a **document source** in a
       request body. It only runs when a request's `:encode` says where that
       source is; a query is never touched. See `Dowser.Client.Encoder`.
-
-  `resolve/1` — used by `Dowser.Client.request/4` on `opts[:repo]` — turns
-  any of the following into a `%Context{}`:
-
-    * a repo module — its resolved configuration (`Dowser.Repo.context/1`);
-    * a map or keyword list — an ad-hoc context, built via `new/1`;
-    * a `%Context{}` — returned as-is.
-
-  `nil` is no repo at all: `dowser_client` has no default, and each backend
-  package supplies its own (`config :dowser_opensearch, default_repo: ...`).
 
   Every field but `:endpoint` defaults to `nil`/`[]` on the struct itself; when
   unset, `Dowser.Client.Request` resolves it at request time from
@@ -96,15 +90,13 @@ defmodule Dowser.Client.Context do
           encoder: Dowser.Client.Encoder.encoder() | nil
         }
 
-  @typedoc "Anything `resolve/1` accepts: a context, a repo module, or attributes for `new/1`."
-  @type ref :: t() | module() | keyword() | map() | nil
-
   ## Public functions
 
   @struct ~w[endpoint auth profile profile_opts http_opts keys decoder encoder]a
 
   @doc """
-  Builds a context from a map or keyword list, ignoring keys that aren't fields.
+  Builds a configuration from a map or keyword list, ignoring keys that aren't
+  fields.
 
   Raises `ArgumentError` when `:endpoint` is missing.
   """
@@ -120,19 +112,30 @@ defmodule Dowser.Client.Context do
   end
 
   @doc """
-  Resolves anything a `:repo` option accepts into a `%Context{}`.
+  Resolves anything a `:repo` option accepts into a `%Dowser.Repo.Config{}`:
 
-  See the module documentation for what each shape means. A repo module whose
-  configuration can't be resolved (no `:endpoint`, say) is reported as
+    * a repo module — the configuration of the instance the calling process
+      uses: its dynamic repo if it set one (`put_dynamic_repo/1`), the repo
+      itself otherwise;
+    * `{repo, name}` — the configuration of that repo's instance started as
+      `name`, whatever the calling process uses;
+    * a map or keyword list — an ad-hoc repo, built via `new/1`;
+    * a `%Dowser.Repo.Config{}` — returned as-is.
+
+  `nil` is no repo at all: `dowser_client` has no default, and each backend
+  package supplies its own (`config :dowser_opensearch, default_repo: ...`).
+
+  A repo whose configuration can't be resolved — no `:endpoint`, a dynamic
+  instance that isn't started — is reported as
   `{:error, {:invalid_repo, repo, message}}`.
   """
-  @spec resolve(ref()) ::
+  @spec resolve(Dowser.Repo.t() | nil) ::
           {:ok, t()}
-          | {:error, :no_repo | {:unknown_repo, atom()} | {:invalid_repo, module(), String.t()}}
+          | {:error, :no_repo | {:unknown_repo, term()} | {:invalid_repo, term(), String.t()}}
   def resolve(repo)
 
-  def resolve(%__MODULE__{} = context) do
-    {:ok, context}
+  def resolve(%__MODULE__{} = config) do
+    {:ok, config}
   end
 
   def resolve(nil) do
@@ -140,30 +143,42 @@ defmodule Dowser.Client.Context do
   end
 
   def resolve(repo) when is_atom(repo) do
+    resolve_repo(repo, repo)
+  end
+
+  def resolve({repo, name} = instance) when is_atom(repo) and is_atom(name) do
+    resolve_repo(repo, instance)
+  end
+
+  def resolve(config) when is_list(config) or is_map(config) do
+    {:ok, new(config)}
+  end
+
+  def resolve(other) do
+    {:error, {:unknown_repo, other}}
+  end
+
+  defp resolve_repo(repo, ref) do
     if Dowser.Repo.repo?(repo) do
-      {:ok, Dowser.Repo.context(repo)}
+      {:ok, Dowser.Repo.config(ref)}
     else
-      {:error, {:unknown_repo, repo}}
+      {:error, {:unknown_repo, ref}}
     end
   rescue
     exception in ArgumentError ->
-      {:error, {:invalid_repo, repo, Exception.message(exception)}}
-  end
-
-  def resolve(context) when is_list(context) or is_map(context) do
-    {:ok, new(context)}
+      {:error, {:invalid_repo, ref, Exception.message(exception)}}
   end
 end
 
-defimpl Inspect, for: Dowser.Client.Context do
+defimpl Inspect, for: Dowser.Repo.Config do
   @moduledoc false
 
-  def inspect(context, opts) do
-    context
+  def inspect(config, opts) do
+    config
     |> Map.from_struct()
     |> Map.update!(:auth, &redact/1)
     |> Inspect.Algebra.to_doc(opts)
-    |> then(&Inspect.Algebra.concat(["#Dowser.Client.Context<", &1, ">"]))
+    |> then(&Inspect.Algebra.concat(["#Dowser.Repo.Config<", &1, ">"]))
   end
 
   defp redact(nil), do: nil

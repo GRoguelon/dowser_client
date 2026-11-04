@@ -15,7 +15,7 @@ defmodule Dowser.Client.Decoder do
 
   ## Options
 
-  Each can be set per request, on a `Dowser.Client.Context`, or globally
+  Each can be set per request, on a repo (`Dowser.Repo.Config`), or globally
   (`config :dowser_client, keys: ..., decoder: ...`) — most specific wins.
 
     * `:keys` — `:strings` (default, no casting), `:atoms`, `:atoms!`, or any
@@ -31,8 +31,8 @@ defmodule Dowser.Client.Decoder do
 
       It is called with the decoded body and its own options, plus two entries
       always added: `:key_fn` (the function `:keys` resolved to,
-      `Function.identity/1` when `:keys` is `:strings`) and `:context` (the
-      resolved `Dowser.Client.Context`). The rest is whatever the decoder needs —
+      `Function.identity/1` when `:keys` is `:strings`) and `:repo_config`
+      (the request's repo, resolved into a `Dowser.Repo.Config`). The rest is whatever the decoder needs —
       an index name, a mapping, a cache reference — and `dowser_client` never
       looks inside it.
 

@@ -63,7 +63,7 @@ defmodule Dowser.MappingCacher do
 
   require Logger
 
-  alias Dowser.Client.Context
+  alias Dowser.Repo.Config
 
   ## Module attributes
 
@@ -104,13 +104,13 @@ defmodule Dowser.MappingCacher do
       end
 
       @doc "The cache key for `{context, index}`; see `Dowser.MappingCacher.key/2`."
-      @spec key(Dowser.Client.Context.t(), term()) :: Dowser.MappingCacher.key()
+      @spec key(Dowser.Repo.Config.t(), term()) :: Dowser.MappingCacher.key()
       def key(context, index) do
         Dowser.MappingCacher.key(context, index)
       end
 
       @doc "Returns the mapping for `{context, index}`; see `Dowser.MappingCacher.get/3`."
-      @spec get(Dowser.Client.Context.ref(), term()) :: {:ok, term()} | {:error, term()}
+      @spec get(Dowser.Repo.t(), term()) :: {:ok, term()} | {:error, term()}
       def get(context, index) do
         Dowser.MappingCacher.get(__MODULE__, context, index)
       end
@@ -119,14 +119,14 @@ defmodule Dowser.MappingCacher do
       Returns the mapping for `{context, index}`, telling one that can't exist
       from one that couldn't be fetched; see `Dowser.MappingCacher.lookup/4`.
       """
-      @spec lookup(Dowser.Client.Context.ref(), term()) ::
+      @spec lookup(Dowser.Repo.t(), term()) ::
               {:ok, map() | nil} | {:error, term()}
       def lookup(context, index) do
         Dowser.MappingCacher.lookup(__MODULE__, unquote(otp_app), context, index)
       end
 
       @doc "Like `lookup/2`, but `nil` on any failure; see `Dowser.MappingCacher.fetch/4`."
-      @spec fetch(Dowser.Client.Context.ref(), term()) :: map() | nil
+      @spec fetch(Dowser.Repo.t(), term()) :: map() | nil
       def fetch(context, index) do
         Dowser.MappingCacher.fetch(__MODULE__, unquote(otp_app), context, index)
       end
@@ -138,7 +138,7 @@ defmodule Dowser.MappingCacher do
       end
 
       @doc "Invalidates a single `{context, index}` entry."
-      @spec invalidate(Dowser.Client.Context.ref(), term()) :: :ok
+      @spec invalidate(Dowser.Repo.t(), term()) :: :ok
       def invalidate(context, index) do
         Dowser.MappingCacher.invalidate(__MODULE__, context, index)
       end
@@ -175,7 +175,7 @@ defmodule Dowser.MappingCacher do
 
   They are *hashed* into it rather than stored. A cache key lives in an ETS
   table for the lifetime of the entry, where any process can read it and a
-  crash dump would carry it; `Dowser.Client.Context` goes as far as redacting
+  crash dump would carry it; `Dowser.Repo.Config` goes as far as redacting
   `:auth` from its own `Inspect`, and putting it in a table here would undo
   that.
 
@@ -191,13 +191,13 @@ defmodule Dowser.MappingCacher do
   not: they can't change what the backend returns. A plain unauthenticated
   context hashes to `nil`, so the common key stays readable.
   """
-  @spec key(Context.t(), term()) :: key()
-  def key(%Context{} = context, index), do: {context.endpoint, scope(context), index}
+  @spec key(Config.t(), term()) :: key()
+  def key(%Config{} = context, index), do: {context.endpoint, scope(context), index}
 
   @doc "Returns the mapping for `{context, index}` from `server`, fetching lazily on a miss."
-  @spec get(atom(), Context.ref(), term()) :: {:ok, term()} | {:error, term()}
+  @spec get(atom(), Dowser.Repo.t(), term()) :: {:ok, term()} | {:error, term()}
   def get(server, context, index) do
-    with {:ok, resolved} <- Context.resolve(context) do
+    with {:ok, resolved} <- Config.resolve(context) do
       key = key(resolved, index)
 
       # Hot path: read ETS directly, no GenServer involved.
@@ -228,7 +228,7 @@ defmodule Dowser.MappingCacher do
 
   A static mapping wins over the cache and is never fetched, so it cannot fail.
   """
-  @spec lookup(atom(), atom(), Context.ref(), term()) :: {:ok, map() | nil} | {:error, term()}
+  @spec lookup(atom(), atom(), Dowser.Repo.t(), term()) :: {:ok, map() | nil} | {:error, term()}
   def lookup(server, otp_app, context, index)
 
   def lookup(_server, _otp_app, nil, _index), do: {:ok, nil}
@@ -251,7 +251,7 @@ defmodule Dowser.MappingCacher do
   The lenient read: a mapping that can't be resolved degrades a cast to
   identity rather than failing the request.
   """
-  @spec fetch(atom(), atom(), Context.ref(), term()) :: map() | nil
+  @spec fetch(atom(), atom(), Dowser.Repo.t(), term()) :: map() | nil
   def fetch(server, otp_app, context, index) do
     case lookup(server, otp_app, context, index) do
       {:ok, mapping} ->
@@ -288,7 +288,7 @@ defmodule Dowser.MappingCacher do
 
     ttl = Keyword.get(opts, :ttl, :infinity)
 
-    case Context.resolve(Keyword.get(opts, :repo)) do
+    case Config.resolve(Keyword.get(opts, :repo)) do
       {:ok, context} ->
         GenServer.call(server, {:put, context, index, mapping, ttl})
 
@@ -299,7 +299,7 @@ defmodule Dowser.MappingCacher do
   end
 
   @doc "Invalidates a single `{context, index}` entry of `server`."
-  @spec invalidate(atom(), Context.ref(), term()) :: :ok
+  @spec invalidate(atom(), Dowser.Repo.t(), term()) :: :ok
   def invalidate(server, context, index) do
     GenServer.call(server, {:invalidate, context, index})
   end
@@ -354,7 +354,7 @@ defmodule Dowser.MappingCacher do
   end
 
   def handle_call({:put, context, index, mapping, ttl}, _from, state) do
-    with {:ok, resolved} <- Context.resolve(context) do
+    with {:ok, resolved} <- Config.resolve(context) do
       store(state.table, key(resolved, index), mapping, to_native(ttl))
     end
 
@@ -362,7 +362,7 @@ defmodule Dowser.MappingCacher do
   end
 
   def handle_call({:invalidate, context, index}, _from, state) do
-    with {:ok, resolved} <- Context.resolve(context) do
+    with {:ok, resolved} <- Config.resolve(context) do
       :ets.delete(state.table, key(resolved, index))
     end
 
@@ -403,9 +403,9 @@ defmodule Dowser.MappingCacher do
 
   ## Keys
 
-  defp scope(%Context{auth: nil, http_opts: []}), do: nil
+  defp scope(%Config{auth: nil, http_opts: []}), do: nil
 
-  defp scope(%Context{} = context) do
+  defp scope(%Config{} = context) do
     # `:deterministic` because `:http_opts` may hold a map (`:headers`), whose
     # ordinary encoding is not canonical — two equal contexts must not scope
     # differently.
@@ -528,7 +528,7 @@ defmodule Dowser.MappingCacher do
   end
 
   defp resolve_and_fetch(fetch, context, index) do
-    with {:ok, resolved} <- Context.resolve(context),
+    with {:ok, resolved} <- Config.resolve(context),
          {:ok, value} <- fetch.(resolved, index) do
       {:ok, key(resolved, index), value}
     end

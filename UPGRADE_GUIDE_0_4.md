@@ -25,7 +25,9 @@ can't point you to.
 | `context: :logs` | `repo: MyApp.Logs` |
 | `context: [endpoint: "..."]` | `repo: [endpoint: "..."]` |
 | no `:context` → the `:default` named context | no `:repo` → `{:error, %Dowser.Client.Error{reason: :no_repo}}`; the backend packages fall back to their own `:default_repo` |
-| `Dowser.Client.Context.fetch/1` | removed — `Dowser.Repo.context/1`, or `MyApp.Search.context()` |
+| `Dowser.Client.Context` | `Dowser.Repo.Config` — the same struct, renamed |
+| `Dowser.Client.Context.fetch/1` | removed — `Dowser.Repo.config/1`, or `MyApp.Search.config()` |
+| a decoder's or encoder's `opts[:context]` | `opts[:repo_config]` |
 | `{:unknown_context, name}` | `:no_repo`, `{:unknown_repo, name}` or `{:invalid_repo, repo, message}` |
 | every request on the `:dowser_client` `:httpc` profile | each repo on a profile of its own, named after the module |
 | a backend cacher's `put(index, mapping, context: ...)` | `put(index, mapping, repo: ...)` — required |
@@ -101,6 +103,22 @@ end
 `verify: true` makes a repo check at startup that its endpoint runs the engine
 its backend package expects; see `Dowser.Repo`.
 
+### Dynamic repos
+
+Where 0.3 needed one named context per cluster, a repo module can be started
+several times under other names, each with its own configuration — a cluster
+per tenant, or clusters only known at runtime:
+
+```elixir
+{:ok, _} = MyApp.Search.start_link(name: :tenant_a, endpoint: "https://a.internal:9200")
+
+MyApp.Search.put_dynamic_repo(:tenant_a)                  # every call from this process
+MyApp.Search.with_dynamic_repo(:tenant_a, fn -> ... end)  # for the duration of a function
+Dowser.Client.get("/_cat/indices", repo: {MyApp.Search, :tenant_a})  # one call
+```
+
+See `Dowser.Repo` for the details.
+
 ## 3. `:context` is `:repo`
 
 ```diff
@@ -120,8 +138,10 @@ where it used to fall back to the `:default` context. The backend packages have
 a default of their own — `config :dowser_opensearch, default_repo:
 MyApp.Search` — so calls through them can keep leaving it out.
 
-`Dowser.Client.Context` is still the struct a repo resolves into, and
-`Context.resolve/1` now takes a repo module where it took a context name.
+`Dowser.Client.Context` is now `Dowser.Repo.Config` — the same struct, with
+the same fields, under the name of what it is: a repo's resolved
+configuration. `Config.resolve/1` takes a repo module where it took a context
+name.
 
 A repo also exposes the HTTP verbs, for an endpoint nothing else covers:
 
@@ -142,9 +162,17 @@ Global settings — `config :dowser_client, profile_opts: ...`, `keys: ...`,
 
 ## 5. Decoders and encoders
 
-Nothing to change: a decoder or encoder still receives `:context`, the repo
-resolved into a `%Dowser.Client.Context{}`. Only the request option was
-renamed.
+A decoder or encoder now receives the repo, resolved, as `:repo_config` — a
+`%Dowser.Repo.Config{}` — where it received `:context`:
+
+```diff
+  def decode(body, opts) do
+-   %Dowser.Client.Context{endpoint: endpoint} = opts[:context]
++   %Dowser.Repo.Config{endpoint: endpoint} = opts[:repo_config]
+```
+
+The backend packages' codecs already read it; only a decoder or encoder of
+your own needs this change.
 
 ## 6. Tests
 

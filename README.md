@@ -67,8 +67,20 @@ Every function that sends a request takes the cluster as its `:repo` option: a
 repo module, or the attributes of an ad-hoc one for a script
 (`repo: [endpoint: "http://localhost:9200"]`). `dowser_client` itself has no
 default; each backend package has its own (`config :dowser_opensearch,
-default_repo: MyApp.Search`). A repo resolves into a `Dowser.Client.Context`,
-the struct the rest of the client works with.
+default_repo: MyApp.Search`). A repo resolves into a `Dowser.Repo.Config`, the
+struct the rest of the client works with.
+
+A repo module can also be started any number of times under other names, each
+with its own configuration — a cluster per tenant, say. These dynamic
+instances are chosen per process, or per call, as with `Ecto.Repo`:
+
+```elixir
+{:ok, _} = MyApp.Search.start_link(name: :tenant_a, endpoint: "https://a.internal:9200")
+
+MyApp.Search.put_dynamic_repo(:tenant_a)                 # every call from this process
+MyApp.Search.with_dynamic_repo(:tenant_a, fn -> ... end) # for the duration of a function
+Dowser.Client.get("/_cat/indices", repo: {MyApp.Search, :tenant_a})  # one call
+```
 
 A repo also exposes the HTTP verbs, for any endpoint the backend package
 doesn't cover — `MyApp.Search.post("/_plugins/_ml/models/_search", query)`.
@@ -138,7 +150,7 @@ backend package supplies:
     ```
 
     It is called with the decoded body and those options plus `:key_fn` and
-    `:context` (the repo, resolved), and owns the result: it walks its own
+    `:repo_config` (the repo, resolved), and owns the result: it walks its own
     envelope, resolves its own mappings, casts its own fields, and applies
     `:key_fn` itself.
 
@@ -176,7 +188,7 @@ or a suggester. So build queries in the shape the backend expects, and tell
   * `:encoder` — the same four shapes as `:decoder` above, with `encode/2` as the
     module callback and `(source, opts -> term)` as the function, resolved the
     same way. Its options are whatever the encoder needs — the target index, a
-    mapping — plus `:context`, which is always added.
+    mapping — plus `:repo_config`, which is always added.
   * `:encode` — where the source sits in *this* request's body: `false`
     (default), `true` (the body is the source), a path (`["doc"]`), or a list of
     paths (`[["doc"], ["upsert"]]`). Per request only — the call site is the only

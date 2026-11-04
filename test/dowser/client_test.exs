@@ -2,7 +2,7 @@ defmodule Dowser.ClientTest do
   use ExUnit.Case, async: false
 
   alias Dowser.Client
-  alias Dowser.Client.Context
+  alias Dowser.Repo.Config
   alias Dowser.Client.Error
   alias Dowser.Client.HTTP.Error, as: HTTPError
   alias Dowser.Client.HTTP.FakeTransport
@@ -38,7 +38,7 @@ defmodule Dowser.ClientTest do
   describe "request/5 with a context in opts" do
     test "joins the endpoint with the path and injects basic-auth headers" do
       {port, server} = TCPTestServer.start(@response)
-      context = Context.new(endpoint: "http://127.0.0.1:#{port}", auth: {:basic, "u", "p"})
+      context = Config.new(endpoint: "http://127.0.0.1:#{port}", auth: {:basic, "u", "p"})
 
       assert {:ok, %Response{status: 200, body: %{"ok" => true}}} =
                Client.request(:get, "/_search", nil,
@@ -95,7 +95,7 @@ defmodule Dowser.ClientTest do
 
     test "an absolute URL overrides the context endpoint" do
       {port, server} = TCPTestServer.start(@response)
-      context = Context.new(endpoint: "http://elsewhere:9200")
+      context = Config.new(endpoint: "http://elsewhere:9200")
 
       assert {:ok, %Response{status: 200}} =
                Client.request(:get, "http://127.0.0.1:#{port}/", nil, repo: context)
@@ -166,7 +166,7 @@ defmodule Dowser.ClientTest do
   describe "request/4 error handling" do
     test "returns {:error, %HTTP.Error{}} when the connection fails" do
       port = TCPTestServer.free_port()
-      context = Context.new(endpoint: "http://127.0.0.1:#{port}")
+      context = Config.new(endpoint: "http://127.0.0.1:#{port}")
 
       assert {:error, %HTTPError{} = error} =
                Client.request(:get, "/", nil, repo: context, retry: false)
@@ -314,7 +314,7 @@ defmodule Dowser.ClientTest do
     end
 
     defp fake_config do
-      Context.new(endpoint: "http://fake")
+      Config.new(endpoint: "http://fake")
     end
   end
 
@@ -376,7 +376,7 @@ defmodule Dowser.ClientTest do
 
     test "a context-configured :keys is applied automatically" do
       {port, server} = TCPTestServer.start(@response)
-      context = Context.new(endpoint: "http://127.0.0.1:#{port}", keys: :atoms)
+      context = Config.new(endpoint: "http://127.0.0.1:#{port}", keys: :atoms)
 
       assert {:ok, %Response{body: %{ok: true}}} =
                Client.request(:get, "/", nil, repo: context)
@@ -386,7 +386,7 @@ defmodule Dowser.ClientTest do
 
     test "a request-level :keys overrides the context's" do
       {port, server} = TCPTestServer.start(@response)
-      context = Context.new(endpoint: "http://127.0.0.1:#{port}", keys: :atoms)
+      context = Config.new(endpoint: "http://127.0.0.1:#{port}", keys: :atoms)
 
       assert {:ok, %Response{body: %{"ok" => true}}} =
                Client.request(:get, "/", nil, repo: context, keys: :strings)
@@ -414,7 +414,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(@response)
 
       context =
-        Context.new(
+        Config.new(
           endpoint: "http://127.0.0.1:#{port}",
           encoder:
             {fn source, opts -> Map.put(source, "from", opts[:index]) end, index: "articles"}
@@ -433,7 +433,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(@response)
 
       context =
-        Context.new(
+        Config.new(
           endpoint: "http://127.0.0.1:#{port}",
           encoder: fn _source, _opts -> raise "never called" end
         )
@@ -448,7 +448,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(@response)
 
       context =
-        Context.new(
+        Config.new(
           endpoint: "http://127.0.0.1:#{port}",
           decoder: {fn body, opts -> {body, opts[:flag]} end, flag: :set}
         )

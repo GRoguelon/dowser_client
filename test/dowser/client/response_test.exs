@@ -1,7 +1,7 @@
 defmodule Dowser.Client.ResponseTest do
   use ExUnit.Case, async: true
 
-  alias Dowser.Client.Context
+  alias Dowser.Repo.Config
   alias Dowser.Client.Error
   alias Dowser.Client.JSON.Error, as: JSONError
   alias Dowser.Client.Request
@@ -14,7 +14,7 @@ defmodule Dowser.Client.ResponseTest do
   # tests build one through the real resolution pipeline via `request/1` and
   # only vary what each test cares about.
   defp request(opts \\ []) do
-    context = Keyword.get(opts, :context, Context.new(endpoint: "http://x:9200"))
+    context = Keyword.get(opts, :context, Config.new(endpoint: "http://x:9200"))
     request_opts = Keyword.drop(opts, [:context])
 
     assert {:ok, request} = Request.new(context, :get, "/", nil, request_opts)
@@ -153,8 +153,8 @@ defmodule Dowser.Client.ResponseTest do
     end
 
     test "a decoder also gets the resolved context in opts" do
-      context = Context.new(endpoint: "http://x:9200")
-      decoder = fn _body, opts -> opts[:context] end
+      context = Config.new(endpoint: "http://x:9200")
+      decoder = fn _body, opts -> opts[:repo_config] end
 
       assert {:ok, %Response{body: ^context}} =
                Response.decode(response(~s({"a":1})), request(context: context, decoder: decoder))

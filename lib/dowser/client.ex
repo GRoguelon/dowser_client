@@ -29,8 +29,9 @@ defmodule Dowser.Client do
 
     * `:repo` (required) — the cluster to query: a `Dowser.Repo` module, or the
       attributes of an ad-hoc one (`repo: [endpoint: "http://localhost:9200"]`).
+      Also `{repo, name}` for one of a repo's dynamic instances.
       `dowser_client` has no default repo; the backend packages do (see
-      `Dowser.Client.Context`).
+      `Dowser.Repo.Config.resolve/1`).
     * `:params` — query-string parameters appended to the URL.
     * `:format` — `:json` (default), `:ndjson` or `:raw`; selects the codec used
       to encode the request body *and* decode the response body (`:raw` leaves
@@ -43,8 +44,8 @@ defmodule Dowser.Client do
     * `:decoder` — a module exporting `decode/2`, a `(body, opts -> term)`
       function, or either paired with the options it needs
       (`{MyDecoder, mapping: mapping}`), owning the decoded response body. It
-      receives its own options plus `:key_fn` and `:context` (the repo,
-      resolved into a `Dowser.Client.Context`), and does the
+      receives its own options plus `:key_fn` and `:repo_config` (the repo,
+      resolved into a `Dowser.Repo.Config`), and does the
       backend-specific casting `dowser_client` can't: finding documents in the
       envelope, resolving each one's mapping, casting its fields.
     * `:encoder` — a module exporting `encode/2`, a `(source, opts -> term)`
@@ -69,7 +70,7 @@ defmodule Dowser.Client do
     * `:retry` — retry policy for transient failures; see `Dowser.Client.Retry`.
   """
 
-  alias Dowser.Client.Context
+  alias Dowser.Repo.Config
   alias Dowser.Client.Error
   alias Dowser.Client.HTTP.Error, as: HTTPError
   alias Dowser.Client.Request
@@ -133,7 +134,7 @@ defmodule Dowser.Client do
   ## Private functions
 
   defp resolve_repo(repo) do
-    case Context.resolve(repo) do
+    case Config.resolve(repo) do
       {:ok, context} ->
         {:ok, context}
 

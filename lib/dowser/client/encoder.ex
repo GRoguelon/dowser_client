@@ -17,7 +17,7 @@ defmodule Dowser.Client.Encoder do
 
   ## Options
 
-  `:encoder` can be set per request, on a `Dowser.Client.Context`, or globally
+  `:encoder` can be set per request, on a repo (`Dowser.Repo.Config`), or globally
   (`config :dowser_client, encoder: ...`) — most specific wins, as a whole.
   `:encode` is per request only.
 
@@ -29,8 +29,9 @@ defmodule Dowser.Client.Encoder do
           {fun, index: "articles"}           # ... with its options
 
       The options are whatever the encoder needs — the target index, a mapping, a
-      cache reference — and `dowser_client` never looks inside them. `:context`
-      (the resolved `Dowser.Client.Context`) is always added to them.
+      cache reference — and `dowser_client` never looks inside them. `:repo_config`
+      (the request's repo, resolved into a `Dowser.Repo.Config`) is always
+      added to them.
 
       A request that sets `:encoder` replaces the repo's outright, options
       included; there is no per-key merging, so a call that needs its own options

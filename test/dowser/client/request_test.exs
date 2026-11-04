@@ -13,13 +13,13 @@ end
 defmodule Dowser.Client.RequestTest do
   use ExUnit.Case, async: false
 
-  alias Dowser.Client.Context
+  alias Dowser.Repo.Config
   alias Dowser.Client.Error
   alias Dowser.Client.JSON.Error, as: JSONError
   alias Dowser.Client.Request
 
   defp context(opts \\ []) do
-    Context.new(Keyword.merge([endpoint: "http://es:9200"], opts))
+    Config.new(Keyword.merge([endpoint: "http://es:9200"], opts))
   end
 
   describe "url" do
@@ -284,7 +284,7 @@ defmodule Dowser.Client.RequestTest do
       encoder = fn source, opts ->
         Map.merge(source, %{
           "index" => opts[:index],
-          "endpoint" => opts[:context].endpoint
+          "endpoint" => opts[:repo_config].endpoint
         })
       end
 
@@ -652,7 +652,7 @@ defmodule Dowser.Client.RequestTest do
 
       assert {:ok, request} = Request.new(context, :get, "/", nil, decoder: decoder)
 
-      assert request.decoder == {decoder, context: context}
+      assert request.decoder == {decoder, repo_config: context}
     end
 
     test "a decoder carries its own options, and always receives the context" do
@@ -664,7 +664,7 @@ defmodule Dowser.Client.RequestTest do
 
       assert {^decoder, opts} = request.decoder
       assert opts[:mapping] == :m
-      assert opts[:context] == context
+      assert opts[:repo_config] == context
     end
 
     test "a module decoder is accepted, with or without its options" do
@@ -693,7 +693,7 @@ defmodule Dowser.Client.RequestTest do
       assert request.key_fn.("a") == :a
       assert {^decoder, opts} = request.decoder
       assert opts[:mapping] == :from_context
-      assert opts[:context] == context
+      assert opts[:repo_config] == context
     end
 
     test "opts override the context's values" do

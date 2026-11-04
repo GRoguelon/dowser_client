@@ -2,7 +2,7 @@ defmodule Dowser.Client.Request do
   @moduledoc """
   A fully-resolved HTTP request, ready to hand to `Dowser.Client.HTTP`.
 
-  `new/5` turns a `Dowser.Client.Context` plus a method, path, body and
+  `new/5` turns a `Dowser.Repo.Config` plus a method, path, body and
   per-request options into a `%Request{}`. All option resolution happens here,
   so the transport only ever sees a finished request:
 
@@ -54,7 +54,7 @@ defmodule Dowser.Client.Request do
 
   require Logger
 
-  alias Dowser.Client.Context
+  alias Dowser.Repo.Config
   alias Dowser.Client.Decoder
   alias Dowser.Client.Encoder
   alias Dowser.Client.Error
@@ -110,7 +110,7 @@ defmodule Dowser.Client.Request do
   Returns `{:error, exception}` for an invalid option, an unsupported body, or a
   `:decoder`/`:encoder` that raised — never raises, whatever those do.
   """
-  @spec new(Context.t(), HTTP.method(), String.t() | nil, term(), keyword()) ::
+  @spec new(Config.t(), HTTP.method(), String.t() | nil, term(), keyword()) ::
           {:ok, t()} | {:error, Exception.t()}
   def new(context, method, path, body, opts) do
     with :ok <- reject_removed_opts(opts),
@@ -251,21 +251,23 @@ defmodule Dowser.Client.Request do
   defp fetch_decoder(context, opts) do
     with {:ok, decoder} <-
            :decoder |> resolve_option(context, opts) |> Decoder.decoder() |> wrap_error() do
-      {:ok, put_context(decoder, context)}
+      {:ok, put_repo_config(decoder, context)}
     end
   end
 
   defp fetch_encoder(context, opts) do
     with {:ok, encoder} <-
            :encoder |> resolve_option(context, opts) |> Encoder.encoder() |> wrap_error() do
-      {:ok, put_context(encoder, context)}
+      {:ok, put_repo_config(encoder, context)}
     end
   end
 
   # A decoder/encoder always receives the resolved context alongside its own
   # options, so it is baked in here rather than threaded through every call.
-  defp put_context(nil, _context), do: nil
-  defp put_context({fun, opts}, context), do: {fun, Keyword.put(opts, :context, context)}
+  defp put_repo_config(nil, _config), do: nil
+
+  defp put_repo_config({fun, opts}, config),
+    do: {fun, Keyword.put(opts, :repo_config, config)}
 
   # Only the call site knows whether the body it built holds a document source,
   # and where — so `:encode` is per request, and off by default.

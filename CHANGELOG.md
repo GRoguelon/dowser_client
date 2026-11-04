@@ -22,6 +22,11 @@ Breaking — see [UPGRADE_GUIDE_0_4.md](UPGRADE_GUIDE_0_4.md) for the path from
   default, exposes `request/4` and the HTTP verbs for any endpoint, and with
   `verify: true` checks at startup that its endpoint runs the engine its backend
   package expects (`engine/0`).
+- **Dynamic repos.** A repo module can be started any number of times under
+  other names (`MyApp.Search.start_link(name: :tenant_a, endpoint: ...)`), each
+  with its own configuration and connection pool. A process picks one with
+  `put_dynamic_repo/1` or `with_dynamic_repo/2`, and a single call with
+  `repo: {MyApp.Search, :tenant_a}`.
 
 - **Mapping-driven casting, shared by `dowser_elasticsearch` and
   `dowser_opensearch`.** The casting both packages carried their own copy of now
@@ -58,6 +63,9 @@ Breaking — see [UPGRADE_GUIDE_0_4.md](UPGRADE_GUIDE_0_4.md) for the path from
   packages fall back to their own `:default_repo`). Passing `:context` returns
   an error pointing at `:repo`. `Dowser.MappingCacher.put/4` takes `:repo` too,
   and raises without one rather than storing nothing.
+- **Breaking: `Dowser.Client.Context` is `Dowser.Repo.Config`**, the same
+  struct, and a decoder or encoder receives it as `:repo_config` rather than
+  `:context`.
 - **Breaking: only nine date formats are cast**, each the one an Elixir function
   reads: `epoch_millis`, `epoch_second`, `strict_date`,
   `strict_date_hour_minute_second(_millis)`, `strict_date_time(_no_millis)` and
