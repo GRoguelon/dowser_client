@@ -89,6 +89,8 @@ defmodule Dowser.Client.MixProject do
           Dowser.Codec,
           Dowser.Envelope,
           Dowser.Source,
+          Dowser.Mapping,
+          Dowser.Schema,
           Dowser.MappingCacher
         ],
         Types: [
@@ -104,7 +106,8 @@ defmodule Dowser.Client.MixProject do
           Dowser.Client.Error,
           Dowser.Client.HTTP.Error,
           Dowser.Client.JSON.Error,
-          Dowser.MappingError
+          Dowser.MappingError,
+          Dowser.UnknownFieldError
         ]
       ]
     ]

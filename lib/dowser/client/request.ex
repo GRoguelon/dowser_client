@@ -159,9 +159,10 @@ defmodule Dowser.Client.Request do
   # Options an earlier release understood and this one does not. Those that name
   # *where* a request goes — `:config` (0.1), `:context` (0.3) and
   # `:http_adapter` — are errors: ignoring one would quietly send the request
-  # somewhere the caller didn't ask for. The rest only shape a body, so they
+  # somewhere the caller didn't ask for. So is the backend packages' `:codec`
+  # (0.3), now `:types`: ignoring it would quietly leave every value uncast. The rest only shape a body, so they
   # warn and the request proceeds; see UPGRADE_GUIDE_0_2.md.
-  @rejected_options [:config, :context, :http_adapter]
+  @rejected_options [:config, :context, :codec, :http_adapter]
 
   @deprecated_options [:codec_adapter, :codec_opts, :json_adapter, :json_opts]
 

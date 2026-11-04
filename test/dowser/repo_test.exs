@@ -282,6 +282,18 @@ defmodule Dowser.RepoTest do
     end
   end
 
+  describe "a mock repo" do
+    test "a module implementing request/4 answers in place of a repo" do
+      assert {:ok, %{body: %{"mocked" => [:get, "/_cat"]}}} =
+               Dowser.Repo.request(Dowser.TestMockRepo, :get, "/_cat", nil, [])
+    end
+
+    test "it isn't a repo: there is no configuration to resolve" do
+      refute Dowser.Repo.repo?(Dowser.TestMockRepo)
+      assert {:error, {:unknown_repo, Dowser.TestMockRepo}} = Config.resolve(Dowser.TestMockRepo)
+    end
+  end
+
   describe "repo?/1" do
     test "is true for a repo module only" do
       assert Dowser.Repo.repo?(TestRepo)

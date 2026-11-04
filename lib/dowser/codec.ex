@@ -47,23 +47,36 @@ defmodule Dowser.Codec do
 
   `dowser_client` always supplies `:repo_config` (the request's repo, resolved
   into a `Dowser.Repo.Config`), and a decoder also gets `:key_fn` (the function
-  `:keys` resolved to). The rest are the codec's own, given alongside it as
-  `{Dowser.OpenSearch.Codec, opts}`, or per request:
+  `:keys` resolved to). The API function sets `:index` (the index a source is
+  cast against) and `:source` (`true` when a response body is a bare `_source`
+  document). The rest decide how documents are cast:
 
-    * `:codec` — the `Dowser.Type` module leaves are cast through. Resolved
-      per request, then per context, then from the backend's application
-      environment (`config :dowser_opensearch, codec: MyApp.Type`), then
-      `Dowser.Type`.
-    * `:index` — the index whose mapping `encode/3` casts a source against, and
-      that `decode/3` casts a `:source` body against. Set by the API function
-      itself.
-    * `:source` — `true` when a response body is a bare `_source` document.
-      Set by the API function itself.
-    * `:mapping` — a mapping to cast against, instead of looking one up. Skips
-      the mapping cacher entirely.
-    * `:mapping_failure` — what to do when a mapping *cannot be fetched*; see
-      below. Defaults to the backend's application environment
-      (`config :dowser_opensearch, mapping_failure: ...`), itself `:error`.
+    * `:mapping` — where the mapping comes from: a map (the mapping itself), a
+      module implementing `Dowser.Mapping`, or a document module (its own
+      mapping). Defaults to the backend's mapping cacher — the cluster's
+      mapping, which the application has to start. Documents come back as
+      maps.
+    * `:struct` — a document module (`Dowser.Schema`): every document is loaded
+      into its struct, and its struct dumped back, against its own mapping.
+      Passing a different `:mapping` alongside it is an `ArgumentError`.
+    * `:types` — the `Dowser.Type` module leaf values are cast through
+      (default `Dowser.Type`).
+    * `:unknown_fields` — a field the mapping doesn't declare is `:keep`-t as
+      it is (default), or `:raise`s a `Dowser.UnknownFieldError`. Maps only: a
+      struct has no room for an undeclared field, so loading one always raises.
+    * `:mapping_failure` — what to do when the mapping *cannot be fetched*;
+      see below. Default `:error`.
+
+  Each is resolved per request, then from the options the repo gives the
+  codec (`decoder: {Dowser.OpenSearch.Codec, types: MyApp.Types}`), then from
+  the backend's application environment
+  (`config :dowser_opensearch, types: MyApp.Types`) — except `:struct`, which
+  only makes sense per request. So the application-wide mapping source is
+
+      config :dowser_opensearch, mapping: MyApp.Mappings
+
+  with the backend's cacher the default when nothing is set. `:struct` always
+  casts against its own mapping, whatever the application sets.
 
   ## When the mapping can't be fetched
 
@@ -107,9 +120,10 @@ defmodule Dowser.Codec do
   @typedoc """
   A backend codec's own settings:
 
-    * `:otp_app` — the backend's application: where `:codec`,
-      `:mapping_failure` are read from, and the telemetry event prefix.
-    * `:cacher` — its `Dowser.MappingCacher` module.
+    * `:otp_app` — the backend's application: where `:types`,
+      `:unknown_fields` and `:mapping_failure` are read from, and the telemetry
+      event prefix.
+    * `:cacher` — its `Dowser.MappingCacher` module, the default `:mapping`.
     * `:opaque` — the mapping types whose subtree is never cast.
   """
   @type config :: %{otp_app: atom(), cacher: module(), opaque: [String.t()]}
@@ -124,32 +138,38 @@ defmodule Dowser.Codec do
   """
   @spec decode(term(), keyword(), config()) :: term()
   def decode(body, opts, config) do
-    source_opts = [
-      key_fn: Keyword.fetch!(opts, :key_fn),
-      type: type(opts, config),
-      opaque: config.opaque
-    ]
+    casting = casting(opts, config)
+    source_opts = source_opts(casting, config, key_fn: Keyword.fetch!(opts, :key_fn))
 
     if Keyword.get(opts, :source, false) do
-      Dowser.Source.load(body, mapping(Keyword.get(opts, :index), opts, config), source_opts)
+      load_source(body, Keyword.get(opts, :index), casting, opts, config, source_opts)
     else
-      Dowser.Envelope.load(body, &mapping(&1, opts, config), source_opts)
+      Dowser.Envelope.load(body, &mapping(&1, casting, opts, config), source_opts)
     end
   end
 
   @doc """
-  Casts `source` against the mapping of `opts[:index]`, returning the encoded
-  term.
+  Casts `source` against the mapping of `opts[:index]` — or, with `:struct`,
+  against the struct's — returning the encoded term.
 
-  Without an `:index` there is no mapping to cast against, and the source
-  passes through unchanged. See the module documentation for the options.
+  Without an `:index` or a `:mapping` there is no mapping to cast against, and
+  the source passes through unchanged. See the module documentation for the
+  options.
   """
   @spec encode(term(), keyword(), config()) :: term()
   def encode(source, opts, config) do
-    Dowser.Source.dump(source, mapping(Keyword.get(opts, :index), opts, config),
-      type: type(opts, config),
-      opaque: config.opaque
-    )
+    casting = casting(opts, config)
+    source_opts = source_opts(casting, config, [])
+
+    case {casting.struct, source} do
+      {struct, %struct{}} ->
+        struct.__dump__(source, source_opts)
+
+      _other ->
+        mapping = mapping(Keyword.get(opts, :index), casting, opts, config)
+
+        Dowser.Source.dump(source, mapping, source_opts)
+    end
   end
 
   @doc """
@@ -176,26 +196,104 @@ defmodule Dowser.Codec do
     items
   end
 
-  ## Private functions — the type module
+  ## Private functions — the options
 
-  defp type(opts, config) do
-    Keyword.get(opts, :codec) || Application.get_env(config.otp_app, :codec, Dowser.Type)
+  @removed %{
+    codec:
+      "the :codec option is now :types — it names the Dowser.Type module leaves are cast through"
+  }
+
+  defp casting(opts, config) do
+    reject_removed!(opts, config)
+
+    struct = document_module!(Keyword.get(opts, :struct))
+    mapping = Keyword.get(opts, :mapping)
+
+    if struct && mapping && mapping != struct do
+      raise ArgumentError,
+            "struct: #{inspect(struct)} casts against its own mapping, so it can't be " <>
+              "combined with mapping: #{inspect(mapping)}"
+    end
+
+    %{
+      struct: struct,
+      mapping: struct || mapping || Application.get_env(config.otp_app, :mapping),
+      types: option(opts, config, :types, Dowser.Type),
+      unknown_fields: option(opts, config, :unknown_fields, :keep)
+    }
+  end
+
+  defp option(opts, config, key, default) do
+    Keyword.get(opts, key) || Application.get_env(config.otp_app, key, default)
+  end
+
+  defp document_module!(nil), do: nil
+
+  defp document_module!(struct) do
+    if Dowser.Schema.schema?(struct) do
+      struct
+    else
+      raise ArgumentError,
+            "struct: #{inspect(struct)} is not a document module — it needs " <>
+              "__schema__/1, __load__/2 and __dump__/2 (see Dowser.Schema)"
+    end
+  end
+
+  # `:codec` named the type module until 0.4; left in place it would be ignored
+  # without a word, and every value come back uncast.
+  defp reject_removed!(opts, config) do
+    Enum.each(@removed, fn {key, hint} ->
+      if Keyword.has_key?(opts, key) or Application.get_env(config.otp_app, key) != nil do
+        raise ArgumentError, hint
+      end
+    end)
+  end
+
+  defp source_opts(casting, config, extra) do
+    Keyword.merge(
+      [
+        types: casting.types,
+        opaque: config.opaque,
+        unknown_fields: casting.unknown_fields,
+        struct: casting.struct
+      ],
+      extra
+    )
+  end
+
+  # A bare `_source` (a get-source response) has no hit around it: its index
+  # is the request's, and that is all the metadata there is.
+  defp load_source(body, index, casting, opts, config, source_opts) do
+    case casting.struct do
+      nil ->
+        Dowser.Source.load(body, mapping(index, casting, opts, config), source_opts)
+
+      struct ->
+        struct.__load__(body, Dowser.Envelope.struct_opts(source_opts, %{"_index" => index}))
+    end
   end
 
   ## Private functions — the mapping
 
-  defp mapping(index, opts, config) do
-    case Keyword.get(opts, :mapping) do
+  defp mapping(index, casting, opts, config) do
+    case casting.mapping do
       nil ->
-        lookup(index, opts, config)
+        fetch(config.cacher, index, opts, config)
 
-      mapping ->
+      %{} = mapping ->
         mapping
+
+      module when is_atom(module) ->
+        if function_exported?(module, :fetch_mapping, 2) or not Dowser.Schema.schema?(module) do
+          fetch(module, index, opts, config)
+        else
+          module.__schema__(:mapping)
+        end
     end
   end
 
-  defp lookup(index, opts, config) do
-    case config.cacher.lookup(Keyword.get(opts, :repo_config), index) do
+  defp fetch(source, index, opts, config) do
+    case source.fetch_mapping(index, Keyword.get(opts, :repo_config)) do
       {:ok, mapping} ->
         mapping
 

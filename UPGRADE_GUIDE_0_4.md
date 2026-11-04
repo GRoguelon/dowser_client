@@ -28,6 +28,8 @@ can't point you to.
 | `Dowser.Client.Context` | `Dowser.Repo.Config` — the same struct, renamed |
 | `Dowser.Client.Context.fetch/1` | removed — `Dowser.Repo.config/1`, or `MyApp.Search.config()` |
 | a decoder's or encoder's `opts[:context]` | `opts[:repo_config]` |
+| the backend packages' `codec:` option | `types:` — `codec:` is now an error naming it |
+| a backend cacher's `lookup/2` → `{:ok, nil}` when not started | `{:error, {:not_started, cacher}}` — the application starts it |
 | `{:unknown_context, name}` | `:no_repo`, `{:unknown_repo, name}` or `{:invalid_repo, repo, message}` |
 | every request on the `:dowser_client` `:httpc` profile | each repo on a profile of its own, named after the module |
 | a backend cacher's `put(index, mapping, context: ...)` | `put(index, mapping, repo: ...)` — required |
@@ -190,6 +192,14 @@ A backend cacher's `put/3` needs `repo:` too — and now raises without one. It
 used to resolve the `:default` context, and when there was none, store nothing
 without a word.
 
+### Mock repos
+
+A repo is the `Dowser.Repo` behaviour, and every request goes through its
+`request/4`, so a Mox mock can stand in for one in a test:
+`Mox.defmock(MyApp.SearchMock, for: Dowser.Repo)`, then
+`repo: MyApp.SearchMock`. It replaces the whole transport — decoding and
+casting included.
+
 ## 7. For backend package authors: the shared casting
 
 The casting `dowser_elasticsearch` and `dowser_opensearch` each had a copy of
@@ -206,6 +216,12 @@ lives here now, one concern per module:
 
 A backend package keeps a thin codec handing `Dowser.Codec` its configuration
 — its application, its cacher, and the mapping types that are opaque on it.
+
+`Dowser.Codec` takes five casting options — `:mapping`, `:struct`, `:types`,
+`:unknown_fields` and `:mapping_failure` — and two behaviours plug into them:
+`Dowser.Mapping` (where a mapping comes from; the mapping cachers implement
+it) and `Dowser.Schema` (a document module, for `:struct`). `Dowser.Source`
+names its type module `:types`, like the request option.
 
 ## Watch out for silence
 

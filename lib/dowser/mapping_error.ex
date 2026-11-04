@@ -25,6 +25,12 @@ defmodule Dowser.MappingError do
   defexception [:index, :reason]
 
   @impl true
+  def message(%__MODULE__{index: index, reason: {:not_started, cacher}}) do
+    "could not fetch the mapping for index #{inspect(index)}: #{inspect(cacher)} is " <>
+      "not started — add it to your supervision tree, or give the mapping with " <>
+      ":mapping (or :struct)"
+  end
+
   def message(%__MODULE__{index: index, reason: reason}) do
     "could not fetch the mapping for index #{inspect(index)}, so its values " <>
       "would have been left uncast: #{inspect(reason)}"

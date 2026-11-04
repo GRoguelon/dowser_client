@@ -386,6 +386,22 @@ with each other, and an unstubbed process still talks to the network; see the
 module docs for scripting multiple endpoints and for testing from a process
 other than the one that called `stub/1`.
 
+For a unit test that only needs a canned answer, mock the repo instead. A
+repo is the `Dowser.Repo` behaviour, and every request goes through its
+`request/4`, so a [Mox](https://hexdocs.pm/mox) mock stands in for one:
+
+```elixir
+Mox.defmock(MyApp.SearchMock, for: Dowser.Repo)
+
+Mox.expect(MyApp.SearchMock, :request, fn :get, "/_cluster/health", _body, _opts ->
+  {:ok, %Dowser.Client.Response{status: 200, headers: %{}, body: %{"status" => "green"}}}
+end)
+```
+
+The mock replaces the whole transport — encoding, decoding and casting
+included — so the body it returns is exactly what the caller gets. To test
+the casting too, stub the HTTP layer as above.
+
 ## HTTP configuration
 
 Requests go over `:httpc`, pinned to HTTP/1.1 with keep-alive, with

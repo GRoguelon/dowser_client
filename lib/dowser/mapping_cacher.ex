@@ -9,10 +9,19 @@ defmodule Dowser.MappingCacher do
         use Dowser.MappingCacher, otp_app: :dowser_opensearch
       end
 
+  The backend package doesn't start it: an application that casts against the
+  cluster's mappings adds it to its own supervision tree, with its options:
+
+      children = [MyApp.Search, {Dowser.OpenSearch.MappingCacher, ttl: :timer.minutes(10)}]
+
+  Asked without having been started, it reports `{:not_started, cacher}` —
+  which `Dowser.Codec` treats as a mapping it couldn't fetch.
+
   The functions below take that module as their first argument (`server`);
   the module `use` defines exposes them without it — `start_link/1`,
   `child_spec/1`, `key/2`, `get/2`, `lookup/2`, `fetch/2`, `put/3`,
-  `invalidate/2` and `clear/0`.
+  `invalidate/2` and `clear/0` — and implements `Dowser.Mapping` with
+  `fetch_mapping/2`, which makes it a backend's default mapping source.
 
   A GenServer owns an ETS table; reads go straight to ETS (concurrent,
   lock-free), and only misses/expired entries go through the GenServer — which
@@ -88,6 +97,8 @@ defmodule Dowser.MappingCacher do
     otp_app = Keyword.fetch!(opts, :otp_app)
 
     quote do
+      @behaviour Dowser.Mapping
+
       @doc """
       A child spec starting this cacher under its own name; see
       `Dowser.MappingCacher` for the options.
@@ -123,6 +134,16 @@ defmodule Dowser.MappingCacher do
               {:ok, map() | nil} | {:error, term()}
       def lookup(context, index) do
         Dowser.MappingCacher.lookup(__MODULE__, unquote(otp_app), context, index)
+      end
+
+      @doc """
+      The mapping of `index` on `repo_config`'s cluster — `lookup/2` as the
+      `Dowser.Mapping` behaviour, which makes this cacher the default mapping
+      source.
+      """
+      @impl Dowser.Mapping
+      def fetch_mapping(index, repo_config) do
+        lookup(repo_config, index)
       end
 
       @doc "Like `lookup/2`, but `nil` on any failure; see `Dowser.MappingCacher.fetch/4`."
@@ -220,7 +241,11 @@ defmodule Dowser.MappingCacher do
     * `{:ok, mapping}` — a static mapping (from `otp_app`'s environment), a
       cached one, or a freshly fetched one.
     * `{:ok, nil}` — there is no mapping to be had: no index named, or no
-      cacher running (an application that doesn't cast at all).
+      repo to ask.
+    * `{:error, {:not_started, server}}` — the cacher isn't running. A
+      backend package doesn't start it: an application that casts against the
+      cluster's mappings starts it in its supervision tree. A static mapping
+      still answers without it.
     * `{:error, reason}` — the fetch failed. The mapping may well exist; this
       request just couldn't see it. `Dowser.Codec` turns this into a
       `Dowser.MappingError` by default, rather than casting nothing and handing
@@ -435,7 +460,7 @@ defmodule Dowser.MappingCacher do
     if running?(server) do
       get(server, context, index)
     else
-      {:ok, nil}
+      {:error, {:not_started, server}}
     end
   rescue
     exception ->
@@ -445,8 +470,10 @@ defmodule Dowser.MappingCacher do
       {:error, {:exit, reason}}
   end
 
-  # Nothing to read from and nothing to ask: an application that doesn't cast
-  # doesn't start the cacher, and that is not a failed fetch.
+  # An application starts the cacher itself when it casts against the
+  # cluster's mappings; one that is asked without having been started was
+  # forgotten in a supervision tree, which `lookup/4` reports rather than
+  # quietly casting nothing.
   defp running?(table), do: :ets.whereis(table) != :undefined
 
   defp fresh_lookup(table, key) do

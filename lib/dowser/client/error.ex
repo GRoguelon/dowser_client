@@ -81,8 +81,8 @@ defmodule Dowser.Client.Error do
     "invalid :retry option #{inspect(value)}, expected a keyword list or false"
   end
 
-  def message(%__MODULE__{reason: {:removed_option, :context}}) do
-    ":context was removed in 0.4.0 — #{removed_option_hint(:context)}."
+  def message(%__MODULE__{reason: {:removed_option, option}}) when option in [:context, :codec] do
+    "#{inspect(option)} was removed in 0.4.0 — #{removed_option_hint(option)}."
   end
 
   def message(%__MODULE__{reason: {:removed_option, option}}) do
@@ -102,6 +102,10 @@ defmodule Dowser.Client.Error do
   def removed_option_hint(option)
 
   def removed_option_hint(:config), do: "the option is now :repo"
+
+  def removed_option_hint(:codec) do
+    "the option is now :types, naming the Dowser.Type module leaf values are cast through"
+  end
 
   def removed_option_hint(:context) do
     "the option is now :repo, taking a Dowser.Repo module (or [endpoint: ...]); " <>

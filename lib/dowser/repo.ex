@@ -92,9 +92,18 @@ defmodule Dowser.Repo do
       MyApp.Search.post("/_plugins/_ml/models/_search", %{query: %{match_all: %{}}})
 
   They go to the process's dynamic repo, and return `Dowser.Client.request/4`'s
-  result (`{:ok, %Dowser.Client.Response{}}` for any status). Being
-  `c:request/4` callbacks, they are also the seam a test can replace with a
-  mock repo.
+  result (`{:ok, %Dowser.Client.Response{}}` for any status).
+
+  ## Testing
+
+  `c:request/4` is the one place every request goes through, so a mock of this
+  behaviour can stand in for a repo — `Mox.defmock(MyApp.SearchMock, for:
+  Dowser.Repo)`, then `repo: MyApp.SearchMock`. It returns responses as
+  `{:ok, %Dowser.Client.Response{status: 200, body: %{...}}}`, and stands in
+  for the whole transport — encoding, decoding and casting included — so the
+  body it returns is exactly what the caller gets. To exercise the casting
+  too, stub the HTTP layer instead (`Dowser.Client.HTTP.Stub`), behind a real
+  repo.
   """
 
   alias Dowser.Repo.Config
@@ -381,7 +390,7 @@ defmodule Dowser.Repo do
         end
 
       module when is_atom(module) ->
-        if repo?(module) do
+        if repo?(module) or implements_request?(module) do
           module.request(method, path, body, opts)
         else
           Dowser.Client.request(method, path, body, Keyword.put(opts, :repo, repo))
@@ -390,6 +399,14 @@ defmodule Dowser.Repo do
       other ->
         Dowser.Client.request(method, path, body, Keyword.put(opts, :repo, other))
     end
+  end
+
+  # A module implementing `c:request/4` without `use Dowser.Repo` — a mock of
+  # this behaviour, in a test. It answers requests; it has no configuration to
+  # resolve, so casting configured on a repo doesn't apply through it.
+  defp implements_request?(module) do
+    not is_nil(module) and Code.ensure_loaded?(module) and
+      function_exported?(module, :request, 4)
   end
 
   ## Internal — shared with the server

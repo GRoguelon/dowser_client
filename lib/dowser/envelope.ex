@@ -18,6 +18,13 @@ defmodule Dowser.Envelope do
 
   Everything around the documents is envelope too: its keys go through
   `:key_fn`, its values are left alone.
+
+  With a `:struct` (a `Dowser.Schema` module), each hit's `_source` is loaded
+  into that struct by its `__load__/2`, which also receives the hit's metadata
+  as `:meta`; inner hits — parts of a document, not documents — stay maps.
+
+  `:key_fn` casts the keys of maps — the envelope, map sources, inner hits —
+  and never the fields of a struct.
   """
 
   alias Dowser.CoreExt.Keyable
@@ -28,8 +35,8 @@ defmodule Dowser.Envelope do
   Casts every document found in `body`.
 
   `mapping_fn` returns the mapping for an index name (`nil` when there is
-  none). `opts` are `Dowser.Source`'s: `:key_fn` (default: identity), `:type`
-  and `:opaque`.
+  none). `opts` are `Dowser.Source`'s — `:key_fn` (default: identity),
+  `:types`, `:opaque`, `:unknown_fields` — plus `:struct`.
 
       iex> mapping = %{"properties" => %{"ip" => %{"type" => "ip"}}}
       iex> body = %{"hits" => %{"hits" => [%{"_index" => "hosts", "_source" => %{"ip" => "127.0.0.1"}}]}}
@@ -70,7 +77,7 @@ defmodule Dowser.Envelope do
 
     Map.new(hit, fn
       {"_source" = key, source} ->
-        {key_fn.(key), Dowser.Source.load(source, mapping, opts)}
+        {key_fn.(key), load_source(source, mapping, hit, opts)}
 
       # `inner_hits` holds documents rather than envelope: each named entry is
       # a hits envelope of its own, over documents of the same index. They
@@ -86,6 +93,33 @@ defmodule Dowser.Envelope do
       {key, value} ->
         {key_fn.(key), Keyable.transform_keys(value, key_fn)}
     end)
+  end
+
+  # The hit's own fields, for a struct's `__meta__`: everything about the
+  # document that isn't in its source.
+  @meta_keys ~w[_id _index _version _seq_no _primary_term _score sort _routing]
+
+  defp load_source(source, mapping, hit, opts) do
+    case Keyword.get(opts, :struct) do
+      nil ->
+        Dowser.Source.load(source, mapping, opts)
+
+      struct ->
+        struct.__load__(source, struct_opts(opts, Map.take(hit, @meta_keys)))
+    end
+  end
+
+  @doc false
+  # What a document module's `__load__/2` receives: the casting options and the
+  # hit's metadata — but not `:key_fn`, which casts the keys of *maps*. A
+  # struct's fields are its own, and its loader reads the source by the
+  # mapping's names.
+  @spec struct_opts(keyword(), map()) :: keyword()
+  def struct_opts(opts, meta) do
+    opts
+    |> Keyword.delete(:key_fn)
+    |> Keyword.delete(:struct)
+    |> Keyword.put(:meta, meta)
   end
 
   ## Private functions — inner hits

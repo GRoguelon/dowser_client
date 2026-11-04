@@ -45,10 +45,26 @@ Breaking — see [UPGRADE_GUIDE_0_4.md](UPGRADE_GUIDE_0_4.md) for the path from
   telemetry prefix, its cacher, and the types that are opaque on it
   (`flat_object` on OpenSearch, `flattened` on Elasticsearch).
 
+- **An application-wide mapping source.** `:mapping` defaults from the
+  backend's application environment (`config :dowser_opensearch, mapping:
+  MyApp.Mappings`), then the backend's mapping cacher.
+- **Mock repos.** `Dowser.Repo.request/5` hands a request to any module
+  implementing `request/4` — a Mox mock of `Dowser.Repo` included — which
+  stands in for the whole transport.
 - **`NaiveDateTime` and `Time` date formats.** A `date` field formatted
   `strict_date_hour_minute_second` (or `…_millis`) loads to a `NaiveDateTime`
   and dumps without an offset; one formatted `strict_hour_minute_second` (or
   `…_millis`) loads to a `Time`.
+- **Casting options: `:mapping`, `:struct`, `:types`, `:unknown_fields`,
+  `:mapping_failure`.** `Dowser.Codec` resolves all five per request, then from
+  the codec's own options, then from the backend's application environment.
+  `:mapping` takes a map, a `Dowser.Mapping` module (the new behaviour the
+  mapping cachers implement), or a document module; `:struct` loads every
+  document into a `Dowser.Schema` module's struct and dumps it back — the hit's
+  `_id`, `_seq_no` and the rest reach it as `:meta`, and `:keys` casts the
+  envelope around it but never its fields; `:unknown_fields: :raise`
+  raises the new `Dowser.UnknownFieldError` for a field the mapping doesn't
+  declare, loading or dumping.
 - **`long_range` is cast to a `Range`**, like `integer_range`.
 - **`-00:00` is read as UTC.** `DateTime.from_iso8601/1` rejects it, so such a
   value used to come back as a string.
@@ -66,6 +82,16 @@ Breaking — see [UPGRADE_GUIDE_0_4.md](UPGRADE_GUIDE_0_4.md) for the path from
 - **Breaking: `Dowser.Client.Context` is `Dowser.Repo.Config`**, the same
   struct, and a decoder or encoder receives it as `:repo_config` rather than
   `:context`.
+- **Breaking: the backend packages' `:codec` option is `:types`.** It names
+  the `Dowser.Type` module leaf values are cast through; a request, a codec or
+  an application environment still using `:codec` is now an error naming
+  `:types`, where leaving it in place would have cast nothing without a word.
+  `Dowser.Source`'s own option is `:types` too.
+- **Breaking: a mapping cacher that isn't started is a failure.** Its
+  `lookup/2` returns `{:error, {:not_started, cacher}}` where it returned
+  `{:ok, nil}`, so `Dowser.Codec` raises a `Dowser.MappingError` naming it (or
+  follows `:mapping_failure`) rather than leaving every value uncast. The
+  backend packages no longer start their cacher; the application does.
 - **Breaking: only nine date formats are cast**, each the one an Elixir function
   reads: `epoch_millis`, `epoch_second`, `strict_date`,
   `strict_date_hour_minute_second(_millis)`, `strict_date_time(_no_millis)` and

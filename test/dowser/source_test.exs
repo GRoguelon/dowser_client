@@ -130,6 +130,42 @@ defmodule Dowser.SourceTest do
     end
   end
 
+  describe "unknown_fields:" do
+    @raise [unknown_fields: :raise]
+
+    test ":keep (the default) leaves a field the mapping doesn't declare" do
+      assert Source.load(%{"extra" => 1}, @mapping) == %{"extra" => 1}
+      assert Source.load(%{"extra" => 1}, @mapping, unknown_fields: :keep) == %{"extra" => 1}
+    end
+
+    test ":raise names the field, from the root, when loading" do
+      error =
+        assert_raise Dowser.UnknownFieldError, fn ->
+          Source.load(%{"author" => %{"name" => "Ada", "nickname" => "A"}}, @mapping, @raise)
+        end
+
+      assert error.path == ["author", "nickname"]
+      assert error.direction == :load
+    end
+
+    test ":raise applies when dumping, atom keys included" do
+      error =
+        assert_raise Dowser.UnknownFieldError, fn ->
+          Source.dump(%{ip: {127, 0, 0, 1}, extra: 1}, @mapping, @raise)
+        end
+
+      assert error.path == ["extra"]
+      assert error.direction == :dump
+    end
+
+    test "an opaque subtree, and no mapping at all, have nothing unknown" do
+      assert Source.load(%{"roster" => %{"anything" => 1}}, @mapping, @raise ++ @opaque_types) ==
+               %{"roster" => %{"anything" => 1}}
+
+      assert Source.load(%{"anything" => 1}, nil, @raise) == %{"anything" => 1}
+    end
+  end
+
   describe "dump/3" do
     defmodule Author do
       defstruct [:name, :born]
