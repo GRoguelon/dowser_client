@@ -19,7 +19,7 @@ defmodule Dowser.Client.Request do
       says where (see Casting below), then encoded according to the request
       format (`:json`, `:ndjson` or `:raw`) by
       `Dowser.Client.JSON`/`Dowser.Client.NDJSON`.
-    * **http_opts** — `:http_opts` merged global → context → request (minus
+    * **http_opts** — `:http_opts` merged global → repo → request (minus
       `:headers`, kept as its own field — see above), plus the resolved
       `:profile` and `:profile_opts`. Handed straight to
       `Dowser.Client.HTTP.request/5`.
@@ -156,11 +156,12 @@ defmodule Dowser.Client.Request do
 
   ## Private functions — removed options
 
-  # Options 0.1.x understood and 0.2.0 does not. Two of them name *where* a
-  # request goes, so ignoring one would quietly send it somewhere the caller
-  # didn't ask for — those are errors. The rest only shape a body, so they warn
-  # and the request proceeds; see UPGRADE_GUIDE_0_2.md.
-  @rejected_options [:config, :http_adapter]
+  # Options an earlier release understood and this one does not. Those that name
+  # *where* a request goes — `:config` (0.1), `:context` (0.3) and
+  # `:http_adapter` — are errors: ignoring one would quietly send the request
+  # somewhere the caller didn't ask for. The rest only shape a body, so they
+  # warn and the request proceeds; see UPGRADE_GUIDE_0_2.md.
+  @rejected_options [:config, :context, :http_adapter]
 
   @deprecated_options [:codec_adapter, :codec_opts, :json_adapter, :json_opts]
 

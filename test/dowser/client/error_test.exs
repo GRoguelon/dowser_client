@@ -13,9 +13,19 @@ defmodule Dowser.Client.ErrorTest do
       assert Exception.message(error) == "custom message"
     end
 
-    test "{:unknown_context, name}" do
-      error = Error.exception(reason: {:unknown_context, :main})
-      assert Exception.message(error) == "unknown context :main"
+    test ":no_repo" do
+      error = Error.exception(reason: :no_repo)
+      assert Exception.message(error) =~ "no repo to send the request to: pass :repo"
+    end
+
+    test "{:unknown_repo, name}" do
+      error = Error.exception(reason: {:unknown_repo, :main})
+      assert Exception.message(error) =~ ":main is not a repo"
+    end
+
+    test "{:invalid_repo, repo, message}" do
+      error = Error.exception(reason: {:invalid_repo, MyApp.Search, "no :endpoint"})
+      assert Exception.message(error) == "repo MyApp.Search is misconfigured: no :endpoint"
     end
 
     test "{:invalid_format, format}" do
@@ -51,8 +61,8 @@ defmodule Dowser.Client.ErrorTest do
     end
 
     test "raise/2 with a module + keyword list builds the exception via exception/1" do
-      assert_raise Error, "unknown context :main", fn ->
-        raise Error, reason: {:unknown_context, :main}
+      assert_raise Error, "repo MyApp.Search is misconfigured: no :endpoint", fn ->
+        raise Error, reason: {:invalid_repo, MyApp.Search, "no :endpoint"}
       end
     end
   end

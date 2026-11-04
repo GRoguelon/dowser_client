@@ -32,7 +32,7 @@ defmodule Dowser.Client.Encoder do
       cache reference — and `dowser_client` never looks inside them. `:context`
       (the resolved `Dowser.Client.Context`) is always added to them.
 
-      A request that sets `:encoder` replaces the context's outright, options
+      A request that sets `:encoder` replaces the repo's outright, options
       included; there is no per-key merging, so a call that needs its own options
       names the encoder alongside them. A backend package usually writes that
       once, in the function that builds the request.
@@ -82,11 +82,10 @@ defmodule Dowser.Client.Encoder do
       Dowser.Client.post("/articles/_search", query)
 
   An encoder whose options never vary — one that resolves the index from the
-  document, say — belongs on the context instead, leaving call sites to pass only
+  document, say — belongs on the repo instead, leaving call sites to pass only
   `:encode`:
 
-      config :dowser_client,
-        contexts: [default: [endpoint: "...", encoder: Dowser.Elasticsearch.Encoder]]
+      config :my_app, MyApp.Search, endpoint: "...", encoder: Dowser.Elasticsearch.Codec
 
   ## An `:ndjson` body
 

@@ -269,13 +269,14 @@ defmodule Dowser.MappingCacher do
   instead of degrading to identity for want of a cluster to ask:
 
       setup do
-        Dowser.OpenSearch.MappingCacher.put("posts", %{"properties" => %{...}})
+        Dowser.OpenSearch.MappingCacher.put("posts", %{"properties" => %{...}}, repo: MyApp.Search)
       end
 
   ## Options
 
-    * `:context` — the context the entry belongs to, as in `key/2`
-      (default `nil`, the unauthenticated one).
+    * `:repo` (required) — the repo the entry belongs to, as in `key/2`: a
+      `Dowser.Repo` module or `[endpoint: ...]`. Raises an `ArgumentError`
+      when it can't be resolved.
     * `:ttl` — entry lifetime in ms (default `:infinity`, unlike a fetched
       entry: an entry put by hand is not a cached answer that can go stale).
   """
@@ -287,7 +288,14 @@ defmodule Dowser.MappingCacher do
 
     ttl = Keyword.get(opts, :ttl, :infinity)
 
-    GenServer.call(server, {:put, Keyword.get(opts, :context), index, mapping, ttl})
+    case Context.resolve(Keyword.get(opts, :repo)) do
+      {:ok, context} ->
+        GenServer.call(server, {:put, context, index, mapping, ttl})
+
+      {:error, reason} ->
+        raise ArgumentError,
+              "cannot put a mapping without a repo to key it by: #{inspect(reason)}"
+    end
   end
 
   @doc "Invalidates a single `{context, index}` entry of `server`."
@@ -533,7 +541,7 @@ defmodule Dowser.MappingCacher do
 
   defp default_fetch(context, index) do
     case Dowser.Client.get("/#{index}/_mapping",
-           context: context,
+           repo: context,
            keys: :strings,
            decoder: &raw/2,
            format: :json

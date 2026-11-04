@@ -15,7 +15,7 @@ defmodule Dowser.Client do
 
   Errors are always Dowser exceptions, never a dependency's own exception type:
 
-    * `Dowser.Client.Error` — context resolution, invalid
+    * `Dowser.Client.Error` — repo resolution, invalid
       `:auth`/`:format`/`:keys`/`:decoder`/`:encoder`/`:encode`/`:retry`, or a
       `:keys`, `:decoder` or `:encoder` function that raised.
     * `Dowser.Client.JSON.Error` — body encoding or decoding failure.
@@ -24,12 +24,13 @@ defmodule Dowser.Client do
   ## Options
 
   Every option below can be set globally (`config :dowser_client, ...`), per
-  context (`Dowser.Client.Context`), or per request — most specific wins, except
+  repo (`Dowser.Repo`), or per request — most specific wins, except
   `:http_opts`, which merges across all three (most specific wins per key).
 
-    * `:context` — the search backend to query (see `Dowser.Client.Context`);
-      absent resolves the `:default` entry from `config :dowser_client,
-      contexts: [...]` (there is no other built-in fallback).
+    * `:repo` (required) — the cluster to query: a `Dowser.Repo` module, or the
+      attributes of an ad-hoc one (`repo: [endpoint: "http://localhost:9200"]`).
+      `dowser_client` has no default repo; the backend packages do (see
+      `Dowser.Client.Context`).
     * `:params` — query-string parameters appended to the URL.
     * `:format` — `:json` (default), `:ndjson` or `:raw`; selects the codec used
       to encode the request body *and* decode the response body (`:raw` leaves
@@ -42,7 +43,8 @@ defmodule Dowser.Client do
     * `:decoder` — a module exporting `decode/2`, a `(body, opts -> term)`
       function, or either paired with the options it needs
       (`{MyDecoder, mapping: mapping}`), owning the decoded response body. It
-      receives its own options plus `:key_fn` and `:context`, and does the
+      receives its own options plus `:key_fn` and `:context` (the repo,
+      resolved into a `Dowser.Client.Context`), and does the
       backend-specific casting `dowser_client` can't: finding documents in the
       envelope, resolving each one's mapping, casting its fields.
     * `:encoder` — a module exporting `encode/2`, a `(source, opts -> term)`
@@ -82,17 +84,17 @@ defmodule Dowser.Client do
   ## Public functions
 
   @doc """
-  Runs an HTTP request against the context given in `opts[:context]`.
+  Runs an HTTP request against the repo given in `opts[:repo]`.
 
   Returns `{:ok, %Dowser.Client.Response{}}` on a completed exchange (any HTTP
-  status), or `{:error, exception}` when the context cannot be resolved, the
-  body cannot be encoded/decoded, or the transport fails.
+  status), or `{:error, exception}` when the repo cannot be resolved, the body
+  cannot be encoded/decoded, or the transport fails.
   """
   @spec request(method(), String.t(), term(), keyword()) :: result()
   def request(method, path, body \\ nil, opts \\ []) do
-    {context_ref, opts} = Keyword.pop(opts, :context)
+    {repo, opts} = Keyword.pop(opts, :repo)
 
-    with {:ok, context} <- resolve_context(context_ref),
+    with {:ok, context} <- resolve_repo(repo),
          {:ok, request} <- Request.new(context, method, path, body, opts) do
       perform(request)
     end
@@ -130,8 +132,8 @@ defmodule Dowser.Client do
 
   ## Private functions
 
-  defp resolve_context(context_ref) do
-    case Context.resolve(context_ref) do
+  defp resolve_repo(repo) do
+    case Context.resolve(repo) do
       {:ok, context} ->
         {:ok, context}
 

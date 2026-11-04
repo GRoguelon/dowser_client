@@ -70,43 +70,29 @@ defmodule Dowser.Client.ContextTest do
                Context.resolve(%{endpoint: "http://map:9200"})
     end
 
-    test "an unknown named context returns an error" do
-      Application.delete_env(:dowser_client, :contexts)
+    test "a repo module resolves to its configuration" do
+      put_repo_config(Dowser.TestRepo, endpoint: "http://repo:9200", keys: :atoms)
 
-      assert {:error, {:unknown_context, :nope}} = Context.resolve(:nope)
+      assert {:ok, %Context{endpoint: "http://repo:9200", keys: :atoms, profile: Dowser.TestRepo}} =
+               Context.resolve(Dowser.TestRepo)
     end
 
-    test "a named context is resolved from a keyword-list :contexts" do
-      put_contexts(main: [endpoint: "http://main:9200", profile: :main])
+    test "a repo module with no :endpoint is reported as misconfigured" do
+      put_repo_config(Dowser.TestRepo, keys: :atoms)
 
-      assert {:ok, %Context{endpoint: "http://main:9200", profile: :main}} =
-               Context.resolve(:main)
+      assert {:error, {:invalid_repo, Dowser.TestRepo, message}} =
+               Context.resolve(Dowser.TestRepo)
+
+      assert message =~ ":missing_endpoint"
     end
 
-    test "a named context is resolved from a map :contexts" do
-      Application.put_env(:dowser_client, :contexts, %{main: [endpoint: "http://main:9200"]})
-      on_exit(fn -> Application.delete_env(:dowser_client, :contexts) end)
-
-      assert {:ok, %Context{endpoint: "http://main:9200"}} = Context.resolve(:main)
+    test "an atom that isn't a repo returns an error" do
+      assert Context.resolve(:nope) == {:error, {:unknown_repo, :nope}}
+      assert Context.resolve(String) == {:error, {:unknown_repo, String}}
     end
 
-    test "a named context already stored as a %Context{} is returned as-is" do
-      preconfigured = Context.new(endpoint: "http://preconfigured:9200")
-      put_contexts(main: preconfigured)
-
-      assert Context.resolve(:main) == {:ok, preconfigured}
-    end
-
-    test "nil delegates to the :default entry" do
-      put_contexts(default: [endpoint: "http://configured-default:9200"])
-
-      assert {:ok, %Context{endpoint: "http://configured-default:9200"}} = Context.resolve(nil)
-    end
-
-    test "nil returns an :unknown_context error when :default isn't configured — there is no built-in fallback" do
-      Application.delete_env(:dowser_client, :contexts)
-
-      assert Context.resolve(nil) == {:error, {:unknown_context, :default}}
+    test "nil is no repo — dowser_client has no default" do
+      assert Context.resolve(nil) == {:error, :no_repo}
     end
   end
 
@@ -162,8 +148,8 @@ defmodule Dowser.Client.ContextTest do
     end
   end
 
-  defp put_contexts(contexts) do
-    Application.put_env(:dowser_client, :contexts, contexts)
-    on_exit(fn -> Application.delete_env(:dowser_client, :contexts) end)
+  defp put_repo_config(repo, config) do
+    Application.put_env(:dowser_client, repo, config)
+    on_exit(fn -> Application.delete_env(:dowser_client, repo) end)
   end
 end

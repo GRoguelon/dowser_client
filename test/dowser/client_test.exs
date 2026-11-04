@@ -42,7 +42,7 @@ defmodule Dowser.ClientTest do
 
       assert {:ok, %Response{status: 200, body: %{"ok" => true}}} =
                Client.request(:get, "/_search", nil,
-                 context: context,
+                 repo: context,
                  http_opts: [headers: [{"accept", "application/json"}]]
                )
 
@@ -58,7 +58,7 @@ defmodule Dowser.ClientTest do
       context = [endpoint: "http://127.0.0.1:#{port}"]
 
       assert {:ok, %Response{status: 200}} =
-               Client.request(:post, "/_bulk", "payload", context: context, format: :raw)
+               Client.request(:post, "/_bulk", "payload", repo: context, format: :raw)
 
       req = Task.await(server)
       assert req.method == "POST"
@@ -72,7 +72,7 @@ defmodule Dowser.ClientTest do
 
       assert {:ok, %Response{status: 200}} =
                Client.request(:post, "/_search", %{"query" => %{"match_all" => %{}}},
-                 context: context
+                 repo: context
                )
 
       req = Task.await(server)
@@ -86,7 +86,7 @@ defmodule Dowser.ClientTest do
 
       assert {:ok, %Response{status: 200}} =
                Client.request(:get, "/_search", nil,
-                 context: context,
+                 repo: context,
                  params: [routing: "u1", refresh: true]
                )
 
@@ -98,7 +98,7 @@ defmodule Dowser.ClientTest do
       context = Context.new(endpoint: "http://elsewhere:9200")
 
       assert {:ok, %Response{status: 200}} =
-               Client.request(:get, "http://127.0.0.1:#{port}/", nil, context: context)
+               Client.request(:get, "http://127.0.0.1:#{port}/", nil, repo: context)
 
       assert Task.await(server).path == "/"
     end
@@ -106,23 +106,21 @@ defmodule Dowser.ClientTest do
 
   describe "get/2, post/3, put/3, patch/3, delete/3 convenience wrappers" do
     test "every wrapper's opts (and post/put/patch's body) default when omitted" do
-      Application.delete_env(:dowser_client, :contexts)
-
-      # No :context given and no :default configured — each should still
+      # No :repo given, and dowser_client has no default — each should still
       # reach real option resolution (proving the \\ nil / \\ [] defaults
       # are wired through) and fail the same documented way.
-      assert {:error, %Error{reason: {:unknown_context, :default}}} = Client.get("/x")
-      assert {:error, %Error{reason: {:unknown_context, :default}}} = Client.post("/x")
-      assert {:error, %Error{reason: {:unknown_context, :default}}} = Client.put("/x")
-      assert {:error, %Error{reason: {:unknown_context, :default}}} = Client.patch("/x")
-      assert {:error, %Error{reason: {:unknown_context, :default}}} = Client.delete("/x")
+      assert {:error, %Error{reason: :no_repo}} = Client.get("/x")
+      assert {:error, %Error{reason: :no_repo}} = Client.post("/x")
+      assert {:error, %Error{reason: :no_repo}} = Client.put("/x")
+      assert {:error, %Error{reason: :no_repo}} = Client.patch("/x")
+      assert {:error, %Error{reason: :no_repo}} = Client.delete("/x")
     end
 
     test "get/2 issues a GET with no body" do
       {port, server} = TCPTestServer.start(@response)
       context = [endpoint: "http://127.0.0.1:#{port}"]
 
-      assert {:ok, %Response{status: 200}} = Client.get("/_search", context: context)
+      assert {:ok, %Response{status: 200}} = Client.get("/_search", repo: context)
       req = Task.await(server)
       assert req.method == "GET"
       assert req.body == ""
@@ -132,7 +130,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(@response)
       context = [endpoint: "http://127.0.0.1:#{port}"]
 
-      assert {:ok, %Response{status: 200}} = Client.post("/_bulk", %{"a" => 1}, context: context)
+      assert {:ok, %Response{status: 200}} = Client.post("/_bulk", %{"a" => 1}, repo: context)
       req = Task.await(server)
       assert req.method == "POST"
       assert req.body == ~s({"a":1})
@@ -142,7 +140,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(@response)
       context = [endpoint: "http://127.0.0.1:#{port}"]
 
-      assert {:ok, %Response{status: 200}} = Client.put("/doc/1", %{"a" => 1}, context: context)
+      assert {:ok, %Response{status: 200}} = Client.put("/doc/1", %{"a" => 1}, repo: context)
       assert Task.await(server).method == "PUT"
     end
 
@@ -150,7 +148,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(@response)
       context = [endpoint: "http://127.0.0.1:#{port}"]
 
-      assert {:ok, %Response{status: 200}} = Client.patch("/doc/1", %{"a" => 1}, context: context)
+      assert {:ok, %Response{status: 200}} = Client.patch("/doc/1", %{"a" => 1}, repo: context)
       assert Task.await(server).method == "PATCH"
     end
 
@@ -158,7 +156,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(@response)
       context = [endpoint: "http://127.0.0.1:#{port}"]
 
-      assert {:ok, %Response{status: 200}} = Client.delete("/doc/1", nil, context: context)
+      assert {:ok, %Response{status: 200}} = Client.delete("/doc/1", nil, repo: context)
       req = Task.await(server)
       assert req.method == "DELETE"
       assert req.body == ""
@@ -171,35 +169,40 @@ defmodule Dowser.ClientTest do
       context = Context.new(endpoint: "http://127.0.0.1:#{port}")
 
       assert {:error, %HTTPError{} = error} =
-               Client.request(:get, "/", nil, context: context, retry: false)
+               Client.request(:get, "/", nil, repo: context, retry: false)
 
       assert error.method == :get
       assert error.reason != nil
     end
 
-    test "returns {:error, %Error{}} for an unconfigured context atom" do
-      Application.delete_env(:dowser_client, :contexts)
-
-      assert {:error, %Error{reason: {:unknown_context, :nope}}} =
-               Client.request(:get, "/", nil, context: :nope)
+    test "returns {:error, %Error{}} for an atom that isn't a repo" do
+      assert {:error, %Error{reason: {:unknown_repo, :nope}}} =
+               Client.request(:get, "/", nil, repo: :nope)
     end
 
-    test "returns {:error, %Error{}} when :context is omitted and no :default is configured" do
-      Application.delete_env(:dowser_client, :contexts)
+    test "returns {:error, %Error{}} when :repo is omitted — there is no default" do
+      assert {:error, %Error{reason: :no_repo}} = Client.request(:get, "/", nil, [])
+    end
 
-      assert {:error, %Error{reason: {:unknown_context, :default}}} =
-               Client.request(:get, "/", nil, [])
+    test "returns {:error, %Error{}} for the removed :context option, naming :repo" do
+      assert {:error, %Error{reason: {:removed_option, :context}} = error} =
+               Client.request(:get, "/", nil,
+                 repo: [endpoint: "http://x:9200"],
+                 context: [endpoint: "http://x:9200"]
+               )
+
+      assert Exception.message(error) =~ "the option is now :repo"
     end
 
     test "returns {:error, %Error{}} for an invalid :format" do
       assert {:error, %Error{reason: {:invalid_format, :xml}}} =
-               Client.request(:get, "/", nil, context: [endpoint: "http://x:9200"], format: :xml)
+               Client.request(:get, "/", nil, repo: [endpoint: "http://x:9200"], format: :xml)
     end
 
     test "returns {:error, %Error{}} when :format conflicts with :req_format" do
       assert {:error, %Error{reason: :conflicting_formats}} =
                Client.request(:get, "/", nil,
-                 context: [endpoint: "http://x:9200"],
+                 repo: [endpoint: "http://x:9200"],
                  format: :json,
                  req_format: :raw
                )
@@ -209,7 +212,7 @@ defmodule Dowser.ClientTest do
       context = [endpoint: "http://x:9200"]
 
       assert {:error, %JSONError{operation: :encode}} =
-               Client.request(:post, "/", {:not, :encodable}, context: context)
+               Client.request(:post, "/", {:not, :encodable}, repo: context)
     end
 
     test "returns {:error, %JSON.Error{}} when the response body cannot be decoded" do
@@ -218,7 +221,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(response)
 
       assert {:error, %JSONError{operation: :decode}} =
-               Client.request(:get, "/", nil, context: [endpoint: "http://127.0.0.1:#{port}"])
+               Client.request(:get, "/", nil, repo: [endpoint: "http://127.0.0.1:#{port}"])
 
       Task.await(server)
     end
@@ -229,7 +232,7 @@ defmodule Dowser.ClientTest do
       FakeTransport.script([])
 
       assert {:error, %HTTPError{reason: :no_script}} =
-               Client.request(:get, "/", nil, context: fake_config(), retry: false)
+               Client.request(:get, "/", nil, repo: fake_config(), retry: false)
     end
 
     test "retries a transient error until it succeeds" do
@@ -241,7 +244,7 @@ defmodule Dowser.ClientTest do
         ])
 
       assert {:ok, %Response{status: 200}} =
-               Client.request(:get, "/", nil, context: fake_config(), retry: [base_delay_ms: 1])
+               Client.request(:get, "/", nil, repo: fake_config(), retry: [base_delay_ms: 1])
 
       assert FakeTransport.calls(transport) == 3
     end
@@ -251,7 +254,7 @@ defmodule Dowser.ClientTest do
 
       assert {:error, %HTTPError{reason: :timeout, attempts: 3}} =
                Client.request(:get, "/", nil,
-                 context: fake_config(),
+                 repo: fake_config(),
                  retry: [max_attempts: 3, base_delay_ms: 1]
                )
 
@@ -262,7 +265,7 @@ defmodule Dowser.ClientTest do
       transport = FakeTransport.script([{:error, :timeout}, {:ok, %Response{status: 200}}])
 
       assert {:error, %HTTPError{attempts: 1}} =
-               Client.request(:get, "/", nil, context: fake_config(), retry: false)
+               Client.request(:get, "/", nil, repo: fake_config(), retry: false)
 
       assert FakeTransport.calls(transport) == 1
     end
@@ -271,7 +274,7 @@ defmodule Dowser.ClientTest do
       transport = FakeTransport.script([{:ok, %Response{status: 404}}])
 
       assert {:ok, %Response{status: 404}} =
-               Client.request(:get, "/", nil, context: fake_config(), format: :raw)
+               Client.request(:get, "/", nil, repo: fake_config(), format: :raw)
 
       assert FakeTransport.calls(transport) == 1
     end
@@ -282,7 +285,7 @@ defmodule Dowser.ClientTest do
 
       assert {:ok, %Response{status: 200}} =
                Client.request(:get, "/", nil,
-                 context: fake_config(),
+                 repo: fake_config(),
                  format: :raw,
                  retry: [base_delay_ms: 1]
                )
@@ -294,7 +297,7 @@ defmodule Dowser.ClientTest do
       transport = FakeTransport.script([{:error, :enoent}])
 
       assert {:error, %HTTPError{reason: :enoent, attempts: 1}} =
-               Client.request(:get, "/", nil, context: fake_config())
+               Client.request(:get, "/", nil, repo: fake_config())
 
       assert FakeTransport.calls(transport) == 1
     end
@@ -307,7 +310,7 @@ defmodule Dowser.ClientTest do
       FakeTransport.script([:not_a_valid_result])
 
       assert {:error, %FunctionClauseError{}} =
-               Client.request(:get, "/", nil, context: fake_config())
+               Client.request(:get, "/", nil, repo: fake_config())
     end
 
     defp fake_config do
@@ -320,7 +323,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(@response)
 
       assert {:ok, %Response{body: %{"ok" => true}}} =
-               Client.request(:get, "/", nil, context: [endpoint: "http://127.0.0.1:#{port}"])
+               Client.request(:get, "/", nil, repo: [endpoint: "http://127.0.0.1:#{port}"])
 
       Task.await(server)
     end
@@ -330,7 +333,7 @@ defmodule Dowser.ClientTest do
 
       assert {:ok, %Response{body: @body}} =
                Client.request(:get, "/", nil,
-                 context: [endpoint: "http://127.0.0.1:#{port}"],
+                 repo: [endpoint: "http://127.0.0.1:#{port}"],
                  format: :raw
                )
 
@@ -342,7 +345,7 @@ defmodule Dowser.ClientTest do
 
       assert {:ok, %Response{body: @body}} =
                Client.request(:post, "/", %{"q" => 1},
-                 context: [endpoint: "http://127.0.0.1:#{port}"],
+                 repo: [endpoint: "http://127.0.0.1:#{port}"],
                  req_format: :json,
                  resp_format: :raw
                )
@@ -355,7 +358,7 @@ defmodule Dowser.ClientTest do
 
       assert {:ok, %Response{body: %{ok: true}}} =
                Client.request(:get, "/", nil,
-                 context: [endpoint: "http://127.0.0.1:#{port}"],
+                 repo: [endpoint: "http://127.0.0.1:#{port}"],
                  keys: :atoms
                )
 
@@ -366,7 +369,7 @@ defmodule Dowser.ClientTest do
       {port, server} = TCPTestServer.start(@response)
 
       assert {:ok, %Response{body: %{"ok" => true}}} =
-               Client.request(:get, "/", nil, context: [endpoint: "http://127.0.0.1:#{port}"])
+               Client.request(:get, "/", nil, repo: [endpoint: "http://127.0.0.1:#{port}"])
 
       Task.await(server)
     end
@@ -376,7 +379,7 @@ defmodule Dowser.ClientTest do
       context = Context.new(endpoint: "http://127.0.0.1:#{port}", keys: :atoms)
 
       assert {:ok, %Response{body: %{ok: true}}} =
-               Client.request(:get, "/", nil, context: context)
+               Client.request(:get, "/", nil, repo: context)
 
       Task.await(server)
     end
@@ -386,7 +389,7 @@ defmodule Dowser.ClientTest do
       context = Context.new(endpoint: "http://127.0.0.1:#{port}", keys: :atoms)
 
       assert {:ok, %Response{body: %{"ok" => true}}} =
-               Client.request(:get, "/", nil, context: context, keys: :strings)
+               Client.request(:get, "/", nil, repo: context, keys: :strings)
 
       Task.await(server)
     end
@@ -394,7 +397,7 @@ defmodule Dowser.ClientTest do
     test "returns {:error, %Error{}} for an invalid :keys" do
       assert {:error, %Error{reason: {:invalid_keys, :bogus_keys}}} =
                Client.request(:get, "/", nil,
-                 context: [endpoint: "http://x:9200"],
+                 repo: [endpoint: "http://x:9200"],
                  keys: :bogus_keys
                )
     end
@@ -402,7 +405,7 @@ defmodule Dowser.ClientTest do
     test "returns {:error, %Error{}} for an invalid :decoder" do
       assert {:error, %Error{reason: {:invalid_decoder, :nope}}} =
                Client.request(:get, "/", nil,
-                 context: [endpoint: "http://x:9200"],
+                 repo: [endpoint: "http://x:9200"],
                  decoder: :nope
                )
     end
@@ -419,7 +422,7 @@ defmodule Dowser.ClientTest do
 
       assert {:ok, %Response{status: 200}} =
                Client.post("/articles/_update/1", %{"doc" => %{"t" => "x"}},
-                 context: context,
+                 repo: context,
                  encode: ["doc"]
                )
 
@@ -436,7 +439,7 @@ defmodule Dowser.ClientTest do
         )
 
       assert {:ok, %Response{status: 200}} =
-               Client.post("/articles/_search", %{"q" => 1}, context: context)
+               Client.post("/articles/_search", %{"q" => 1}, repo: context)
 
       assert Task.await(server).body == ~s({"q":1})
     end
@@ -451,7 +454,7 @@ defmodule Dowser.ClientTest do
         )
 
       assert {:ok, %Response{body: {%{"ok" => true}, :set}}} =
-               Client.request(:get, "/", nil, context: context)
+               Client.request(:get, "/", nil, repo: context)
 
       Task.await(server)
     end

@@ -39,27 +39,39 @@ module — no `Jason`, no `Poison`, nothing to pick.
 
 ## How it works
 
-### Contexts
+### Repos
 
-A `Dowser.Client.Context` is one search backend to talk to: its `:endpoint`,
-`:auth`, the `:httpc` profile to send through, and how to cast what it returns
-and what you send it. The name follows [`elastic/cli`](https://github.com/elastic/cli)'s
-notion of a *context* — a named cluster you address by name instead of
-repeating its coordinates at every call site. Contexts are plain structs —
-build one inline, or configure named ones at compile time:
+A repo is one cluster to talk to. An application defines one module per
+cluster with its backend package (`use Dowser.OpenSearch.Repo, otp_app:
+:my_app`, built on `Dowser.Repo`), configures it under its own application,
+and starts it in its supervision tree — like an `Ecto.Repo`:
 
 ```elixir
-config :dowser_client,
-  contexts: [
-    default: [endpoint: "http://localhost:9200", auth: {:basic, "user", "changeme"}],
-    logs: [endpoint: "https://logs.internal:9200", profile: :logs]
-  ]
+config :my_app, MyApp.Search,
+  endpoint: "http://localhost:9200",
+  auth: {:basic, "user", "changeme"}
+
+config :my_app, MyApp.Logs, endpoint: "https://logs.internal:9200"
+
+children = [MyApp.Search, MyApp.Logs]
 ```
 
-Any function that accepts a `:context` option resolves `nil` to the `:default`
-entry above (there is no other built-in fallback — a `:default` entry must be
-configured, or `:context` must be passed explicitly on every call), an atom to
-a named entry, and a map/keyword list to an ad-hoc inline context.
+A started repo resolves its configuration once — an optional `init/2`
+callback included, for secrets that can't live in config files — and keeps it
+in `:persistent_term`; one that isn't started (a script, a Mix task) resolves
+it per request. Each repo has its own `:httpc` profile, so two clusters never
+share a connection pool. With `verify: true`, a repo checks at startup that
+its endpoint runs the engine its backend package expects.
+
+Every function that sends a request takes the cluster as its `:repo` option: a
+repo module, or the attributes of an ad-hoc one for a script
+(`repo: [endpoint: "http://localhost:9200"]`). `dowser_client` itself has no
+default; each backend package has its own (`config :dowser_opensearch,
+default_repo: MyApp.Search`). A repo resolves into a `Dowser.Client.Context`,
+the struct the rest of the client works with.
+
+A repo also exposes the HTTP verbs, for any endpoint the backend package
+doesn't cover — `MyApp.Search.post("/_plugins/_ml/models/_search", query)`.
 
 `:auth` accepts, each applied as an `authorization` header:
 
@@ -78,8 +90,8 @@ a named entry, and a map/keyword list to an ad-hoc inline context.
 the entry point:
 
 ```elixir
-Dowser.Client.get("/my-index/_search", context: :logs, params: %{size: 10})
-Dowser.Client.post("/my-index/_doc", %{title: "hello"})
+Dowser.Client.get("/my-index/_search", repo: MyApp.Logs, params: %{size: 10})
+Dowser.Client.post("/my-index/_doc", %{title: "hello"}, repo: MyApp.Search)
 ```
 
 Given a method, path, body and options, it resolves everything about the
@@ -126,13 +138,14 @@ backend package supplies:
     ```
 
     It is called with the decoded body and those options plus `:key_fn` and
-    `:context`, and owns the result: it walks its own envelope, resolves its own
-    mappings, casts its own fields, and applies `:key_fn` itself.
+    `:context` (the repo, resolved), and owns the result: it walks its own
+    envelope, resolves its own mappings, casts its own fields, and applies
+    `:key_fn` itself.
 
 Without a `:decoder`, `:keys` is applied on its own. With neither, there is no
-second pass at all. Both resolve per request, then from the context, then from
+second pass at all. Both resolve per request, then from the repo, then from
 `config :dowser_client, ...`; a request setting `:decoder` replaces the
-context's outright, options included.
+repo's outright, options included.
 
 ```elixir
 Dowser.Client.get("/articles/_search",
@@ -187,7 +200,7 @@ Dowser.Client.post("/articles/_search", query)
 ```
 
 An encoder whose options never vary — one that resolves the index from the
-document itself, say — belongs on the context, leaving call sites to pass only
+document itself, say — belongs on the repo, leaving call sites to pass only
 `:encode`.
 
 A path is a list of `Access` keys, and a path that isn't present is skipped
@@ -320,7 +333,7 @@ There is no adapter to choose and no optional dependency to install.
 Errors are always Dowser exceptions, never a dependency's own exception type,
 so callers only ever need to handle one set of shapes:
 
-  * `Dowser.Client.Error` — context resolution, an invalid
+  * `Dowser.Client.Error` — no repo, or one that can't be resolved, an invalid
     `:auth`/`:format`/`:keys`/`:decoder`/`:encoder`/`:encode`/`:retry`, or a
     `:keys`, `:decoder` or `:encoder` function that raised while casting a body.
   * `Dowser.Client.JSON.Error` — body encoding or decoding failure.
@@ -337,9 +350,8 @@ process, so the rest of the pipeline (URL building, headers, retries, JSON
 encoding/decoding) runs exactly as it would against a real backend — no server
 required, and nothing to point at the stub.
 
-It replaces the transport and only the transport: the context is still resolved,
-so a test needs one — either the configured `:default` or an inline one, as
-here.
+It replaces the transport and only the transport: the repo is still resolved,
+so a test needs one — a repo module, or an inline one, as here.
 
 ```elixir
 test "indexes a document" do
@@ -352,7 +364,7 @@ test "indexes a document" do
 
   assert {:ok, %{status: 201, body: %{"result" => "created"}}} =
            Dowser.Client.put("/my-index/_doc/1", %{title: "hello"},
-             context: [endpoint: "http://localhost:9200"]
+             repo: [endpoint: "http://localhost:9200"]
            )
 end
 ```
@@ -367,29 +379,27 @@ other than the one that called `stub/1`.
 Requests go over `:httpc`, pinned to HTTP/1.1 with keep-alive, with
 connect/receive timeouts, connection pooling and retry behavior tuned for
 talking to a search database cluster. Everything below can be set globally
-(`config :dowser_client, ...`), per context, or per request — most specific
+(`config :dowser_client, ...`), per repo, or per request — most specific
 wins, with `:http_opts`, `:ssl` and `:profile_opts` merging per key across the
 three tiers rather than replacing each other wholesale.
 
 ### Profiles
 
 A `:httpc` profile is an isolated manager with its own connection pool,
-session settings and cookie store. `dowser_client` sends through its own
-`:dowser_client` profile rather than `:httpc`'s shared `:default` one, so its
-settings and its keep-alive sessions are never shared with the rest of the
-application. Give each cluster its own profile when they should not share a
-pool:
+session settings and cookie store. `dowser_client` never sends through
+`:httpc`'s shared `:default` one, so its settings and its keep-alive sessions
+are never shared with the rest of the application. Each repo has a profile of
+its own, named after the repo module, so two clusters never share a pool
+either; an ad-hoc `[endpoint: ...]` repo uses the `:dowser_client` profile.
+`:profile` picks another:
 
 ```elixir
-config :dowser_client,
-  contexts: [
-    default: [endpoint: "https://search.internal:9200", profile: :search],
-    logs: [endpoint: "https://logs.internal:9200", profile: :logs]
-  ]
+config :my_app, MyApp.Logs, endpoint: "https://logs.internal:9200", profile: :logs
 ```
 
-Profiles are started on demand, the first time a request needs one, and
-configured once with `:httpc.set_options/2` from `:profile_opts`. The defaults:
+Profiles are started when their repo starts, or on demand the first time a
+request needs one, and configured once with `:httpc.set_options/2` from
+`:profile_opts`. The defaults:
 
 | Setting | Default | Why |
 | --- | --- | --- |
@@ -418,12 +428,12 @@ tier, merged by name (case-insensitively). Weakest to strongest:
 
 1. the `content-type`/`accept` derived from the request/response format,
 2. `config :dowser_client, http_opts: [headers: ...]`,
-3. the context's `:auth`, as an `authorization` header,
-4. the context's own `http_opts[:headers]`,
+3. the repo's `:auth`, as an `authorization` header,
+4. the repo's own `http_opts[:headers]`,
 5. the request's `http_opts[:headers]`.
 
 So a request can override anything — including the derived `content-type` — and a
-context header can override the `authorization` its own `:auth` produced.
+repo header can override the `authorization` its own `:auth` produced.
 
 ```elixir
 Dowser.Client.post("/_search", query, http_opts: [headers: %{"x-opaque-id" => "trace-42"}])
@@ -456,8 +466,9 @@ shrinks several times over, so wherever the network is slower than the cluster
 — a VPN, another region — it is the larger part of the time a request takes:
 
 ```elixir
-config :dowser_client,
-  contexts: [default: [endpoint: "https://search.example.com", http_opts: [compressed: true]]]
+config :my_app, MyApp.Search,
+  endpoint: "https://search.example.com",
+  http_opts: [compressed: true]
 ```
 
 A gzipped response is decompressed whether or not it was asked for. One whose
@@ -474,8 +485,9 @@ host, SNI sent, TLS 1.2+. Nothing to configure for a normal cluster.
 
 ```elixir
 # localhost cluster with a self-signed certificate: no verification at all
-config :dowser_client,
-  contexts: [dev: [endpoint: "https://localhost:9200", http_opts: [ssl: [insecure: true]]]]
+config :my_app, MyApp.Search,
+  endpoint: "https://localhost:9200",
+  http_opts: [ssl: [insecure: true]]
 
 # SSH tunnel or port-forward: real CA, but the hostname will never match
 http_opts: [ssl: [verify_hostname: false]]

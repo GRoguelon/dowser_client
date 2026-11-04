@@ -116,7 +116,7 @@ defmodule Dowser.Client.HTTPTest do
 
       assert {:ok, %Response{status: 200, body: %{"ok" => true}}} =
                Dowser.Client.request(:get, "/_search", %{query: %{match_all: %{}}},
-                 context: [endpoint: "http://127.0.0.1:#{port}"]
+                 repo: [endpoint: "http://127.0.0.1:#{port}"]
                )
 
       request = Task.await(server)
@@ -168,7 +168,7 @@ defmodule Dowser.Client.HTTPTest do
     test "surfaces through Dowser.Client.request/4 as a Dowser.Client.HTTP.Error" do
       assert {:error, %HTTP.Error{reason: reason, profile: :dowser_client}} =
                Dowser.Client.request(:get, "/", nil,
-                 context: [endpoint: "http://127.0.0.1:1"],
+                 repo: [endpoint: "http://127.0.0.1:1"],
                  http_opts: [nope: true],
                  retry: false
                )

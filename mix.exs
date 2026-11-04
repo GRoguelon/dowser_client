@@ -57,10 +57,14 @@ defmodule Dowser.Client.MixProject do
     [
       formatters: ["html"],
       main: "readme",
-      extras: ["README.md", "UPGRADE_GUIDE_0_2.md", "CHANGELOG.md"],
+      extras: ["README.md", "UPGRADE_GUIDE_0_4.md", "UPGRADE_GUIDE_0_2.md", "CHANGELOG.md"],
       source_ref: "v#{@version}",
       source_url: @source_url,
-      skip_undefined_reference_warnings_on: ["CHANGELOG.md", "UPGRADE_GUIDE_0_2.md"],
+      skip_undefined_reference_warnings_on: [
+        "CHANGELOG.md",
+        "UPGRADE_GUIDE_0_2.md",
+        "UPGRADE_GUIDE_0_4.md"
+      ],
       groups_for_modules: [
         HTTP: [
           Dowser.Client.HTTP,
@@ -76,6 +80,10 @@ defmodule Dowser.Client.MixProject do
           Dowser.Client.Decoder,
           Dowser.Client.Encoder,
           Dowser.CoreExt.Keyable
+        ],
+        Repos: [
+          Dowser.Repo,
+          Dowser.Client.Context
         ],
         Mappings: [
           Dowser.Codec,

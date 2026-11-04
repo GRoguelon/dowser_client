@@ -5,13 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - Unreleased
+## [Unreleased]
+
+Breaking — see [UPGRADE_GUIDE_0_4.md](UPGRADE_GUIDE_0_4.md) for the path from
+0.3.
 
 ### Added
 
+- **`Dowser.Repo`: one module per cluster, replacing contexts.** A backend
+  package builds on it (`use Dowser.OpenSearch.Repo, otp_app: :my_app`); the
+  application configures the repo under its own app (`config :my_app,
+  MyApp.Search, endpoint: ...`) and starts it in its supervision tree, like an
+  `Ecto.Repo`. Started, it resolves its configuration once — an optional
+  `init/2` callback included, for secrets — into `:persistent_term`; not
+  started, it resolves it per request. Each repo has its own `:httpc` profile by
+  default, exposes `request/4` and the HTTP verbs for any endpoint, and with
+  `verify: true` checks at startup that its endpoint runs the engine its backend
+  package expects (`engine/0`).
+
 - **Mapping-driven casting, shared by `dowser_elasticsearch` and
-  `dowser_opensearch`.** The casting both packages carried their own copy of
-  now lives here, split three ways so that each concern is in one place:
+  `dowser_opensearch`.** The casting both packages carried their own copy of now
+  lives here, split three ways so that each concern is in one place:
 
   | Module | Concern |
   | --- | --- |
@@ -31,33 +45,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and dumps without an offset; one formatted `strict_hour_minute_second` (or
   `…_millis`) loads to a `Time`.
 - **`long_range` is cast to a `Range`**, like `integer_range`.
-- **`-00:00` is read as UTC.** `DateTime.from_iso8601/1` rejects it, so such
-  a value used to come back as a string.
+- **`-00:00` is read as UTC.** `DateTime.from_iso8601/1` rejects it, so such a
+  value used to come back as a string.
 
 ### Changed
 
-- **Breaking: only nine date formats are cast**, each the one an Elixir
-  function reads: `epoch_millis`, `epoch_second`, `strict_date`,
-  `strict_date_hour_minute_second(_millis)`, `strict_date_time(_no_millis)`
-  and `strict_hour_minute_second(_millis)`. Any other format — including none
-  at all (`strict_date_optional_time||epoch_millis` to the backend), the
-  non-strict spellings and Java patterns — returns its values as stored, in
-  both directions. Give a date field one of the nine formats to have it cast.
+- **Breaking: `:context` is now `:repo`, and named contexts are gone.** Every
+  request names its cluster with `repo:` — a `Dowser.Repo` module, or
+  `[endpoint: ...]` for a script. `config :dowser_client, contexts: [...]` is no
+  longer read, and `dowser_client` has no default: a request without `:repo`
+  returns `{:error, %Dowser.Client.Error{reason: :no_repo}}` (the backend
+  packages fall back to their own `:default_repo`). Passing `:context` returns
+  an error pointing at `:repo`. `Dowser.MappingCacher.put/4` takes `:repo` too,
+  and raises without one rather than storing nothing.
+- **Breaking: only nine date formats are cast**, each the one an Elixir function
+  reads: `epoch_millis`, `epoch_second`, `strict_date`,
+  `strict_date_hour_minute_second(_millis)`, `strict_date_time(_no_millis)` and
+  `strict_hour_minute_second(_millis)`. Any other format — including none at all
+  (`strict_date_optional_time||epoch_millis` to the backend), the non-strict
+  spellings and Java patterns — returns its values as stored, in both
+  directions. Give a date field one of the nine formats to have it cast.
 - **A date is written at exactly its format's precision.** A `DateTime`,
-  `NaiveDateTime` or `Time` is truncated to the second or the millisecond as
-  the format declares, and padded to three digits for a `_millis` format —
+  `NaiveDateTime` or `Time` is truncated to the second or the millisecond as the
+  format declares, and padded to three digits for a `_millis` format —
   `~U[2026-08-11 00:00:00Z]` used to be written to `strict_date_time` without
   the `.000` it requires. A date-time written to `strict_date` keeps its date.
 
 - **The mapping decides what a value is, never its shape.** A value whose
   mapping entry has `"properties"` (or is an `object`/`nested`) is walked as an
-  object; any other typed entry is a leaf, and its whole value goes to its
-  type — even when that value is a map. The backend packages used to tell a
-  range from an object by its `gte`/`lte` keys, and never handed a
-  `geo_point` written as `%{"lat" => _, "lon" => _}` to its type, so it came
-  back as a map rather than `{lat, lon}`; both now follow the mapping. A leaf
-  map that its type leaves uncast has its keys go through `:keys` like the
-  rest of the document.
+  object; any other typed entry is a leaf, and its whole value goes to its type
+  — even when that value is a map. The backend packages used to tell a range
+  from an object by its `gte`/`lte` keys, and never handed a `geo_point` written
+  as `%{"lat" => _, "lon" => _}` to its type, so it came back as a map rather
+  than `{lat, lon}`; both now follow the mapping. A leaf map that its type
+  leaves uncast has its keys go through `:keys` like the rest of the document.
 - **A `DateTime` in any zone is dumped as its UTC instant.** One built with
   `tzdata` in, say, `America/New_York` used to be written with its own offset,
   so the same instant was written two ways. Loading already gave one UTC
@@ -65,17 +86,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time-zone database and with `tzdata`.
 - **Ranges are only cast when the Elixir struct holds them exactly.** A
   `date_range` becomes a `Date.Range` only when its field is formatted
-  `strict_date`; with any other format, or none, it used to have its bounds
-  loaded as `DateTime`s and handed to `Date.range/2`, which raised. An
-  `integer_range`/`long_range` becomes a `Range` only with integer `gte` and
-  `lte` bounds, `gte` no greater than `lte`. Anything else — an open-ended
-  range, `gt`/`lt` bounds, a descending pair — is returned as stored, and only
-  a range stepping by 1 is dumped.
+  `strict_date`; with any other format, or none, a range whose bounds had a time
+  used to have them loaded as `DateTime`s and handed to `Date.range/2`, which
+  raised. An `integer_range`/`long_range` becomes a `Range` only with integer
+  `gte` and `lte` bounds, `gte` no greater than `lte`. Anything else — an
+  open-ended range, `gt`/`lt` bounds, a descending pair — is returned as stored,
+  and only a range stepping by 1 is dumped.
 - **A field the mapping doesn't know is left as it is** (its keys still going
   through `:keys`). It used to be walked against its parent's properties.
 - `:crypto` is listed in `extra_applications`, and `:telemetry` is an optional
   dependency, for the mapping cacher's keys and the failed-fetch event.
 
+### Removed
+
+- **Breaking:** named contexts — `config :dowser_client, contexts: [...]` is no
+  longer read — and `Dowser.Client.Context.fetch/1`. A repo replaces both.
+- **Breaking:** the `{:unknown_context, name}` error reason; a request now fails
+  with `:no_repo`, `{:unknown_repo, name}` or `{:invalid_repo, repo, message}`.
 ## [0.3.1] - 2026-11-02
 
 ### Added

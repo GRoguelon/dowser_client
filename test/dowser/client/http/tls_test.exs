@@ -97,7 +97,7 @@ defmodule Dowser.Client.HTTP.TLSTest do
       ]
 
       assert {:ok, %Response{status: 200, body: %{"ok" => true}}} =
-               Dowser.Client.get("/_search", context: context)
+               Dowser.Client.get("/_search", repo: context)
 
       assert Task.await(server).path == "/_search"
     end

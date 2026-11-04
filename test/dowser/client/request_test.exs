@@ -475,7 +475,7 @@ defmodule Dowser.Client.RequestTest do
       assert {:error, %Error{reason: {:removed_option, :config}} = error} =
                Request.new(context(), :get, "/", nil, config: :logs)
 
-      assert Exception.message(error) =~ "the option is now :context"
+      assert Exception.message(error) =~ "the option is now :repo"
     end
 
     # The rest only shaped a body, so the request proceeds — but it says so,

@@ -7,15 +7,13 @@ defmodule Dowser.Client.HTTP.Profile do
   shared `:default` profile unless asked to, so its settings — and its
   keep-alive sessions — are never shared with the rest of the application.
 
-  Profiles are started on demand, the first time a request needs one, and
-  configured once with `:httpc.set_options/2`. Give each cluster its own
-  profile when they should not share a connection pool:
+  Profiles are started on demand, the first time a request needs one — or when
+  a `Dowser.Repo` starts — and configured once with `:httpc.set_options/2`.
+  Each repo has its own profile by default, named after the repo module, so two
+  clusters never share a connection pool; `:profile` overrides it:
 
-      config :dowser_client,
-        contexts: [
-          default: [endpoint: "https://search.internal:9200", profile: :search],
-          logs: [endpoint: "https://logs.internal:9200", profile: :logs]
-        ]
+      config :my_app, MyApp.Search, endpoint: "https://search.internal:9200"
+      config :my_app, MyApp.Logs, endpoint: "https://logs.internal:9200", profile: :logs
 
   ## Options
 

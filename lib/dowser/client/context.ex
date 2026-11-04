@@ -1,18 +1,13 @@
 defmodule Dowser.Client.Context do
   @moduledoc """
-  One search backend to talk to: its `:endpoint`, `:auth`, the `:httpc` profile
-  to send through, and how to cast the responses it returns.
+  One search backend to talk to, resolved: its `:endpoint`, `:auth`, the
+  `:httpc` profile to send through, and how to cast the responses it returns.
 
-  The name follows `elastic/cli`'s notion of a *context* — a named cluster you
-  address by name instead of repeating its coordinates at every call site.
+  Applications don't build these by hand: they define a `Dowser.Repo` and pass
+  it as the `:repo` option, and the repo resolves its configuration into a
+  context. A script can pass the attributes of one directly instead:
 
-  Build one inline with `new/1`, or configure named ones at compile time:
-
-      config :dowser_client,
-        contexts: [
-          default: [endpoint: "http://localhost:9200", auth: {:basic, "user", "changeme"}],
-          logs: [endpoint: "https://logs.internal:9200", profile: :logs]
-        ]
+      Dowser.Client.get("/_cluster/health", repo: [endpoint: "http://localhost:9200"])
 
   ## Fields
 
@@ -27,8 +22,9 @@ defmodule Dowser.Client.Context do
           {:header, "x-custom-auth", "..."} # any header you like
 
     * `:profile` — the `:httpc` profile requests go through, giving this
-      backend its own connection pool and session settings. Defaults to
-      `:dowser_client`; see `Dowser.Client.HTTP.Profile`.
+      backend its own connection pool and session settings. A `Dowser.Repo`
+      defaults it to the repo module itself; an ad-hoc context to
+      `:dowser_client`. See `Dowser.Client.HTTP.Profile`.
     * `:profile_opts` — that profile's `:httpc.set_options/2` settings
       (`max_sessions`, `max_keep_alive_length`, `keep_alive_timeout`,
       `pipeline_timeout`, `cookies`, ...). Applied once, when the profile
@@ -50,15 +46,15 @@ defmodule Dowser.Client.Context do
       request body. It only runs when a request's `:encode` says where that
       source is; a query is never touched. See `Dowser.Client.Encoder`.
 
-  `resolve/1` — used by `Dowser.Client.request/4` on `opts[:context]` — turns
+  `resolve/1` — used by `Dowser.Client.request/4` on `opts[:repo]` — turns
   any of the following into a `%Context{}`:
 
-    * `nil` — resolves the `:default` entry from `config :dowser_client,
-      contexts: [...]`. There is no built-in fallback; a `:default` entry must
-      be configured, or every call site must pass `:context` explicitly.
-    * an atom — looks up that name in the same `contexts` list/map.
-    * a map or keyword list — builds an ad-hoc context inline via `new/1`.
+    * a repo module — its resolved configuration (`Dowser.Repo.context/1`);
+    * a map or keyword list — an ad-hoc context, built via `new/1`;
     * a `%Context{}` — returned as-is.
+
+  `nil` is no repo at all: `dowser_client` has no default, and each backend
+  package supplies its own (`config :dowser_opensearch, default_repo: ...`).
 
   Every field but `:endpoint` defaults to `nil`/`[]` on the struct itself; when
   unset, `Dowser.Client.Request` resolves it at request time from
@@ -100,8 +96,8 @@ defmodule Dowser.Client.Context do
           encoder: Dowser.Client.Encoder.encoder() | nil
         }
 
-  @typedoc "Anything `resolve/1` accepts: a context, a name, or attributes for `new/1`."
-  @type ref :: t() | atom() | keyword() | map() | nil
+  @typedoc "Anything `resolve/1` accepts: a context, a repo module, or attributes for `new/1`."
+  @type ref :: t() | module() | keyword() | map() | nil
 
   ## Public functions
 
@@ -124,63 +120,38 @@ defmodule Dowser.Client.Context do
   end
 
   @doc """
-  Resolves anything a `:context` option accepts into a `%Context{}`.
+  Resolves anything a `:repo` option accepts into a `%Context{}`.
 
-  See the module documentation for what each shape means.
+  See the module documentation for what each shape means. A repo module whose
+  configuration can't be resolved (no `:endpoint`, say) is reported as
+  `{:error, {:invalid_repo, repo, message}}`.
   """
-  @spec resolve(ref()) :: {:ok, t()} | {:error, {:unknown_context, atom()}}
-  def resolve(context)
+  @spec resolve(ref()) ::
+          {:ok, t()}
+          | {:error, :no_repo | {:unknown_repo, atom()} | {:invalid_repo, module(), String.t()}}
+  def resolve(repo)
 
   def resolve(%__MODULE__{} = context) do
     {:ok, context}
   end
 
   def resolve(nil) do
-    resolve(:default)
+    {:error, :no_repo}
   end
 
-  def resolve(name) when is_atom(name) and not is_nil(name) do
-    case fetch(name) do
-      {:ok, context} ->
-        {:ok, context}
-
-      :error ->
-        {:error, {:unknown_context, name}}
+  def resolve(repo) when is_atom(repo) do
+    if Dowser.Repo.repo?(repo) do
+      {:ok, Dowser.Repo.context(repo)}
+    else
+      {:error, {:unknown_repo, repo}}
     end
+  rescue
+    exception in ArgumentError ->
+      {:error, {:invalid_repo, repo, Exception.message(exception)}}
   end
 
   def resolve(context) when is_list(context) or is_map(context) do
     {:ok, new(context)}
-  end
-
-  @doc """
-  Fetches the named context from `config :dowser_client, contexts: [...]`,
-  returning `{:ok, %Context{}}` or `:error`.
-  """
-  @spec fetch(atom()) :: {:ok, t()} | :error
-  def fetch(name) when is_atom(name) and not is_nil(name) do
-    contexts = Application.get_env(:dowser_client, :contexts, %{})
-
-    case fetch_entry(contexts, name) do
-      {:ok, %__MODULE__{} = context} ->
-        {:ok, context}
-
-      {:ok, context} ->
-        {:ok, new(context)}
-
-      :error ->
-        :error
-    end
-  end
-
-  ## Private functions
-
-  defp fetch_entry(contexts, name) when is_list(contexts) do
-    Keyword.fetch(contexts, name)
-  end
-
-  defp fetch_entry(contexts, name) when is_map(contexts) do
-    Map.fetch(contexts, name)
   end
 end
 

@@ -29,7 +29,9 @@ defmodule Dowser.Client.HTTP.Stub do
         end)
 
         assert {:ok, %{status: 201, body: %{"result" => "created"}}} =
-                 Dowser.Client.put("/my-index/_doc/1", %{title: "hello"})
+                 Dowser.Client.put("/my-index/_doc/1", %{title: "hello"},
+                   repo: [endpoint: "http://localhost:9200"]
+                 )
       end
 
   A single `stub/1` handles every request made by the process for the rest of

@@ -36,7 +36,7 @@ defmodule Dowser.Client.Decoder do
       an index name, a mapping, a cache reference — and `dowser_client` never
       looks inside it.
 
-      A request that sets `:decoder` replaces the context's outright, options
+      A request that sets `:decoder` replaces the repo's outright, options
       included; there is no per-key merging, so a call that needs its own options
       names the decoder alongside them.
 

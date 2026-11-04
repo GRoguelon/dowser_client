@@ -1,16 +1,12 @@
 defmodule Dowser.Codec do
   @moduledoc """
-  The engine behind each backend package's codec — the module a context names
-  as its `Dowser.Client` `:decoder` and `:encoder`:
+  The engine behind each backend package's codec — the module a repo names as
+  its `Dowser.Client` `:decoder` and `:encoder`:
 
-      config :dowser_client,
-        contexts: [
-          default: [
-            endpoint: "http://localhost:9200",
-            decoder: Dowser.OpenSearch.Codec,
-            encoder: Dowser.OpenSearch.Codec
-          ]
-        ]
+      config :my_app, MyApp.Search,
+        endpoint: "http://localhost:9200",
+        decoder: Dowser.OpenSearch.Codec,
+        encoder: Dowser.OpenSearch.Codec
 
   A backend codec is three one-line functions handing their arguments here
   with its own `t:config/0`: which mapping cacher it reads, which application
@@ -49,7 +45,7 @@ defmodule Dowser.Codec do
 
   ## Options
 
-  `dowser_client` always supplies `:context` (the resolved
+  `dowser_client` always supplies `:context` (the request's repo, resolved into a
   `Dowser.Client.Context`), and a decoder also gets `:key_fn` (the function
   `:keys` resolved to). The rest are the codec's own, given alongside it as
   `{Dowser.OpenSearch.Codec, opts}`, or per request:

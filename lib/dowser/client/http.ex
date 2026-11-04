@@ -14,7 +14,7 @@ defmodule Dowser.Client.HTTP do
 
   ## Options
 
-  `:http_opts`, merged global → context → request, is passed here:
+  `:http_opts`, merged global → repo → request, is passed here:
 
     * `:connect_timeout` — TCP connect timeout in milliseconds; default `2_000`.
     * `:timeout` — whole-request timeout in milliseconds; default `30_000`.

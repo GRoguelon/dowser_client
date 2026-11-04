@@ -3,7 +3,7 @@ defmodule Dowser.Client.Error do
   Generic Dowser client error.
 
   Used for failures that are neither HTTP transport nor codec specific —
-  e.g. an unknown context, an invalid
+  e.g. no repo or an unknown one, an invalid
   `:auth`/`:format`/`:keys`/`:decoder`/`:encoder`/`:encode`/`:retry`, or a
   `:keys`, `:decoder` or `:encoder` function that raised while casting a body. Transport failures are `Dowser.Client.HTTP.Error`; JSON encoding and
   decoding failures are `Dowser.Client.JSON.Error`.
@@ -18,8 +18,18 @@ defmodule Dowser.Client.Error do
   @impl true
   def message(%__MODULE__{message: message}) when is_binary(message), do: message
 
-  def message(%__MODULE__{reason: {:unknown_context, name}}) do
-    "unknown context #{inspect(name)}"
+  def message(%__MODULE__{reason: :no_repo}) do
+    "no repo to send the request to: pass :repo (a Dowser.Repo module, or " <>
+      "[endpoint: ...]), or configure the backend package's :default_repo"
+  end
+
+  def message(%__MODULE__{reason: {:unknown_repo, name}}) do
+    "#{inspect(name)} is not a repo: define it with `use Dowser.OpenSearch.Repo` " <>
+      "(or another backend's Repo), or pass [endpoint: ...]"
+  end
+
+  def message(%__MODULE__{reason: {:invalid_repo, repo, message}}) do
+    "repo #{inspect(repo)} is misconfigured: #{message}"
   end
 
   def message(%__MODULE__{reason: {:invalid_auth, auth}}) do
@@ -71,6 +81,10 @@ defmodule Dowser.Client.Error do
     "invalid :retry option #{inspect(value)}, expected a keyword list or false"
   end
 
+  def message(%__MODULE__{reason: {:removed_option, :context}}) do
+    ":context was removed in 0.4.0 — #{removed_option_hint(:context)}."
+  end
+
   def message(%__MODULE__{reason: {:removed_option, option}}) do
     "#{inspect(option)} was removed in 0.2.0 — #{removed_option_hint(option)}. " <>
       "See UPGRADE_GUIDE_0_2.md."
@@ -79,7 +93,7 @@ defmodule Dowser.Client.Error do
   def message(%__MODULE__{reason: reason}), do: "Dowser client error: #{inspect(reason)}"
 
   @doc """
-  What replaced an option removed in 0.2.0, as a sentence fragment.
+  What replaced a removed option, as a sentence fragment.
 
   Shared by this module's messages and the warnings `Dowser.Client.Request`
   logs for the removed options it tolerates.
@@ -87,7 +101,12 @@ defmodule Dowser.Client.Error do
   @spec removed_option_hint(atom()) :: String.t()
   def removed_option_hint(option)
 
-  def removed_option_hint(:config), do: "the option is now :context"
+  def removed_option_hint(:config), do: "the option is now :repo"
+
+  def removed_option_hint(:context) do
+    "the option is now :repo, taking a Dowser.Repo module (or [endpoint: ...]); " <>
+      "named contexts in `config :dowser_client, contexts: [...]` are gone too"
+  end
 
   def removed_option_hint(:http_adapter) do
     "HTTP is always OTP's :httpc now, configured with :profile/:profile_opts, " <>

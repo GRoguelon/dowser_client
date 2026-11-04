@@ -116,7 +116,7 @@ defmodule Dowser.Client.HTTP.StubTest do
 
       assert {:ok, response} =
                Client.put("/my-index/_doc/1", %{title: "hello"},
-                 context: [endpoint: "http://x:9200"]
+                 repo: [endpoint: "http://x:9200"]
                )
 
       assert response.status == 201
