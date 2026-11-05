@@ -2,7 +2,7 @@ defmodule Dowser.Client.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_client"
-  @version "0.4.0"
+  @version "0.5.0"
 
   def project do
     [
@@ -33,6 +33,7 @@ defmodule Dowser.Client.MixProject do
     [
       plt_local_path: "priv/plts",
       plt_core_path: "priv/plts",
+      plt_add_apps: [:mix],
       flags: [:error_handling, :extra_return, :missing_return, :unmatched_returns]
     ]
   end
@@ -95,6 +96,13 @@ defmodule Dowser.Client.MixProject do
           Dowser.Mapping,
           Dowser.Schema,
           Dowser.MappingCacher
+        ],
+        Migrations: [
+          Dowser.Migration,
+          Dowser.Migrator,
+          Dowser.Migration.Adapter,
+          Dowser.Migration.Error,
+          Dowser.Migration.IrreversibleError
         ],
         Types: [
           Dowser.Type,

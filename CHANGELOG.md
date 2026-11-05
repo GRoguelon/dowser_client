@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-05
+
+No breaking change. Migrations run through a backend package's adapter:
+they need `dowser_opensearch` 0.4 or `dowser_elasticsearch` 0.6.
+
+### Added
+
+- **Migrations.** `use Dowser.Migration` defines a migration of a repo's
+  indices, like an `Ecto.Migration`, in `priv/dowser/migrations/<UTC
+  timestamp>_<name>.exs`: `create_index/2`, `drop_index/2`, and `alter_index`
+  with `add`, `modify`, `rename`, `remove`, `set`, `unset` and `script`. Bodies
+  are the engine's JSON as maps; values can come from functions, run when the
+  migration runs — with `repo/0` — so a migration can differ from one cluster
+  to the next. `change/0` is inverted for a rollback (`from:` values and
+  definitions make each operation reversible), or `up/0`/`down/0` are used.
+- **Indices behind aliases.** A migration's index name is an alias; the index
+  behind it is `<name>_<version>`, its mapping's `_meta.dowser_version` the
+  migration that last changed it, checked before each change (`alter_index
+  from:` names it explicitly). The separator is per index: `create_index
+  "events", body, separator: "-"` names it `events-<version>`, and its later
+  copies — and the index a rollback recreates — keep it.
+- **Formatter export.** `import_deps: [:dowser_client]` in an application's
+  `.formatter.exs` keeps the migration DSL (`add :status, ...`) free of
+  parentheses.
+- **`Dowser.Migrator`**, and `mix dowser.gen.migration`, `mix dowser.migrate`,
+  `mix dowser.rollback`, `mix dowser.migrations` and `mix dowser.recover`. A run
+  is planned whole before any change — every check made, several migrations of
+  one index folded together. What the engine changes in place (a field added,
+  a dynamic setting) is changed in place; anything else copies the documents
+  into a new index, only with `--reindex`: writes blocked during the copy
+  (`--no-write-block`), the documents copied through one painless script
+  generated from the operations — field names as parameters, safe for fields
+  inside lists of objects and dotted keys — then the alias moved. The previous
+  index is kept for a rollback to move back onto (`--delete-previous`). A
+  failed copy is undone; a run that died mid-copy leaves the lock for
+  `mix dowser.recover`. `--dry-run` prints the requests.
+- **`Dowser.Migration.Adapter`**, the behaviour a backend package implements
+  to run migrations against its engine — tracking, lock, cluster calls. A
+  repo names its adapter with `__migration_adapter__/0`.
+
 ## [0.4.0] - 2026-11-04
 
 Breaking — see [UPGRADE_GUIDE_0_4.md](UPGRADE_GUIDE_0_4.md) for the path from
