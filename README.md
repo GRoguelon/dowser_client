@@ -7,7 +7,10 @@ clients. It holds what every backend needs the same way:
     `Ecto.Repo` (`Dowser.Repo`);
   * **the transport** — HTTP over `:httpc`, JSON, retries, TLS, errors;
   * **mapping-driven casting** — turning a document's JSON into Elixir terms
-    and back, from its index mapping: dates, ranges, IP addresses, structs.
+    and back, from its index mapping: dates, ranges, IP addresses, structs;
+  * **migrations** — changing a repo's indices over time, like
+    `Ecto.Migration`s: versioned indices behind aliases, copied when the
+    engine can't change them in place (`Dowser.Migration`, `mix dowser.migrate`).
 
 What it doesn't know is any particular engine's API — its endpoints, its
 query language, its mapping types. That lives in a package per engine, built
@@ -17,7 +20,7 @@ on this one:
 
 **Install the backend package you need, not `dowser_client` directly.** It
 pulls `dowser_client` in for you; this README is for what you configure
-through it — repos, HTTP, casting — and for anyone writing a backend
+through it — repos, HTTP, casting, migrations — and for anyone writing a backend
 package.
 
 ## Why it exists
@@ -285,6 +288,51 @@ above — `Dowser.Source.load/3` and `Dowser.Source.dump/3` do the walking for
 one that only needs a different mapping source or type module, and
 `Dowser.CoreExt.Keyable.transform_keys/2` the key half for one that casts
 nothing.
+
+### Migrations
+
+A repo's indices change through migrations, as an Ecto repo's tables do:
+
+```sh
+mix dowser.gen.migration add_status_to_events -r MyApp.Search
+```
+
+```elixir
+# priv/dowser/migrations/20261104120000_add_status_to_events.exs
+defmodule MyApp.Search.Migrations.AddStatusToEvents do
+  use Dowser.Migration
+
+  def change do
+    alter_index "events" do
+      add :status, %{type: :keyword}, default: "active"
+      rename [:comments, :body], :content
+      remove :legacy, %{type: :long}
+      set :number_of_replicas, replicas(), from: 1
+    end
+  end
+
+  # Any value can come from a function, run when the migration runs.
+  defp replicas, do: if(Application.get_env(:my_app, :env) == :dev, do: 0, else: 2)
+end
+```
+
+```sh
+# .formatter.exs: import_deps: [:dowser_client] keeps the DSL without parentheses
+mix dowser.migrate --dry-run --reindex   # the requests it would send
+mix dowser.migrate --reindex
+mix dowser.rollback
+```
+
+`"events"` is an alias; the index behind it is `events_<version>` — or
+`events-<version>`, created with `create_index "events", body, separator: "-"`,
+a choice every later copy of the index keeps. What the
+engine changes in place — a field added without a default, a dynamic setting —
+is changed in place. Anything else copies the documents into a new index, only
+with `--reindex`: writes to the old one are blocked meanwhile, the documents go
+through a painless script generated from the operations, and the alias moves
+onto the copy. A rollback moves it back onto the previous index when it still
+exists. The backend package runs the requests (`Dowser.Migration.Adapter`); see
+`Dowser.Migration` and `Dowser.Migrator` for the rest.
 
 ### Transport
 
@@ -643,8 +691,8 @@ package for your engine instead:
 ```elixir
 def deps do
   [
-    {:dowser_elasticsearch, "~> 0.5.0"}
-    # or {:dowser_opensearch, "~> 0.3.0"}
+    {:dowser_elasticsearch, "~> 0.6.0"}
+    # or {:dowser_opensearch, "~> 0.4.0"}
   ]
 end
 ```
