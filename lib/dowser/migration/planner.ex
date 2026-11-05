@@ -765,10 +765,12 @@ defmodule Dowser.Migration.Planner do
 
   ## Errors
 
+  @spec fail(map(), String.t()) :: no_return()
   defp fail(%{migration: migration, index: index}, message) do
     fail("migration #{migration.version} (#{migration.name}), #{index}: #{message}")
   end
 
+  @spec fail(String.t()) :: no_return()
   defp fail(message), do: raise(Error, message)
 
   ## Describing a plan

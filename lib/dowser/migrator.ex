@@ -513,7 +513,7 @@ defmodule Dowser.Migrator do
                 "if it isn't running any more, run mix dowser.recover"
 
       {:error, reason} ->
-        check!({:error, reason}, "taking the migration lock")
+        error!(reason, "taking the migration lock")
     end
   end
 
@@ -542,7 +542,10 @@ defmodule Dowser.Migrator do
   defp check!(:ok, _what), do: :ok
   defp check!({:ok, result}, _what), do: result
 
-  defp check!({:error, reason}, what) do
+  defp check!({:error, reason}, what), do: error!(reason, what)
+
+  @spec error!(term(), String.t()) :: no_return()
+  defp error!(reason, what) do
     raise Error, "#{what} failed: #{Runner.format(reason)}"
   end
 end

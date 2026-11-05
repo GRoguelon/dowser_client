@@ -86,6 +86,7 @@ defmodule Dowser.Migration.Runner do
 
   # The copy failed before the alias moved: the old index is still the one in
   # use — unblock it, and delete the incomplete new one.
+  @spec undo(map(), Planner.group(), Exception.t()) :: no_return()
   defp undo(ctx, group, exception) do
     %{source: source, dest: dest, blocked: blocked} = group.copy
 
@@ -153,16 +154,16 @@ defmodule Dowser.Migration.Runner do
         await(task, ctx, step)
 
       {:error, reason} ->
-        check!({:error, reason}, "following #{summary(step)} (task #{task})")
+        error!(reason, "following #{summary(step)} (task #{task})")
     end
   end
 
   defp reindexed(%{"error" => error}, step) do
-    check!({:error, error}, step)
+    error!(error, step)
   end
 
   defp reindexed(%{"response" => %{"failures" => [_ | _] = failures}}, step) do
-    check!({:error, {:failures, Enum.take(failures, 5)}}, step)
+    error!({:failures, Enum.take(failures, 5)}, step)
   end
 
   defp reindexed(_status, _step), do: :ok
@@ -187,7 +188,10 @@ defmodule Dowser.Migration.Runner do
   defp check!(:ok, _what), do: :ok
   defp check!({:ok, result}, _what), do: result
 
-  defp check!({:error, reason}, what) do
+  defp check!({:error, reason}, what), do: error!(reason, what)
+
+  @spec error!(term(), String.t() | Planner.step()) :: no_return()
+  defp error!(reason, what) do
     what = if is_binary(what), do: what, else: summary(what)
 
     throw({__MODULE__, %Error{message: "#{what} failed: #{format(reason)}"}, false})

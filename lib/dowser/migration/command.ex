@@ -98,6 +98,7 @@ defmodule Dowser.Migration.Command do
   @spec setting([String.t()]) :: String.t()
   def setting(path), do: Enum.join(["index" | path], ".")
 
+  @spec irreversible(String.t()) :: no_return()
   defp irreversible(what) do
     raise IrreversibleError,
           "cannot roll back #{what}; define up/0 and down/0, or give what reverts it"
