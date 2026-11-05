@@ -65,6 +65,12 @@ defmodule Dowser.Migrator do
   @typedoc "A migration: its version, name and module (once loaded)."
   @type migration :: %{version: integer(), name: String.t(), module: module() | nil}
 
+  @typedoc """
+  A run as `plan/3` plans it: the migrations it would run, and the requests it
+  would send, for `format_plan/1`. Its second element is internal.
+  """
+  @type plan :: {[migration()], map()}
+
   @doc """
   Runs `repo`'s pending migrations (`:up`) or rolls back the last ones
   (`:down`), returning the versions it ran.
@@ -139,13 +145,13 @@ defmodule Dowser.Migrator do
   taking the lock: the migrations it would run, and the requests it would
   send. `format_plan/1` prints them.
   """
-  @spec plan(Dowser.Repo.t(), :up | :down, keyword()) :: {[migration()], Planner.plan()}
+  @spec plan(Dowser.Repo.t(), :up | :down, keyword()) :: plan()
   def plan(repo, direction, opts \\ []) when direction in [:up, :down] do
     prepare(repo, adapter!(repo, opts), direction, opts)
   end
 
   @doc "A plan from `plan/3` as text: each index, then the requests sent for it."
-  @spec format_plan({[migration()], Planner.plan()}) :: String.t()
+  @spec format_plan(plan()) :: String.t()
   def format_plan({[], _plan}), do: "Nothing to run.\n"
 
   def format_plan({migrations, plan}) do
