@@ -2,7 +2,7 @@ defmodule Dowser.Client.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/GRoguelon/dowser_client"
-  @version "0.5.0"
+  @version "0.5.1"
 
   def project do
     [

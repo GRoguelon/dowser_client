@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-11-09
+
+No breaking change. The backend packages only `use Dowser.MappingCacher`, so
+`dowser_opensearch` and `dowser_elasticsearch` pick it up without a change of
+their own.
+
+### Changed
+
+- **`Dowser.MappingCacher` serves a stale mapping while it refreshes it.** A
+  mapping past its `:ttl` used to be a miss: the next caller waited for `GET
+  /<index>/_mapping` again, and failed when the fetch did. A bulk write that
+  needed its mapping just as it expired, behind bulk requests holding every
+  connection of the `:httpc` profile, waited out the cacher's 15 s call timeout
+  and raised a `Dowser.MappingError` — for a mapping that had been in the cache
+  a moment earlier, and hadn't changed.
+
+  Now an expired entry is returned at once, and refreshed in the background:
+  concurrent reads start one fetch, and nobody waits on it. A refresh that
+  fails keeps the stale value — replied to any caller waiting on the same key
+  — and leaves the entry alone for `:refresh_backoff` before trying again, so
+  that a struggling cluster isn't asked on every read. Once a mapping has been
+  fetched, a slow or failing refresh no longer fails a caller; only the first
+  fetch of a key still can.
+
+### Added
+
+- **`:max_stale`**, how long, in ms, an entry past its `:ttl` may still be
+  served: 1 hour by default, `:infinity` to serve it until a refresh replaces
+  it, `0` for the 0.5 behaviour. Past it, an entry is a miss, its reader waits
+  for the fetch, and that fetch can fail. The sweep only drops an entry past
+  its stale horizon.
+- **`:refresh_backoff`**, how long, in ms, a stale entry whose refresh failed
+  is left alone before a read refreshes it again: 30 s by default, never past
+  its `:max_stale`.
+- **`[otp_app, :mapping, :stale]`**, emitted with `%{index: index, reason:
+  reason}` when a refresh fails and a stale value hides it — the cluster is
+  still misbehaving. Without `:telemetry`, a warning is logged instead.
+- **`:otp_app`**, given when the cacher is started, names its telemetry events
+  — `{Dowser.OpenSearch.MappingCacher, otp_app: :my_app}` emits
+  `[:my_app, :mapping, :stale]`. It defaults to the backend's application;
+  static mappings are still read from the backend's environment.
+
+`put/4` (an entry put by hand is never served stale), `invalidate/3` (which
+drops a stale value too, so the next read fetches), `clear/0`, static mappings
+and the `:eager` warm-up are unchanged.
+
 ## [0.5.0] - 2026-11-05
 
 No breaking change. Migrations run through a backend package's adapter:
