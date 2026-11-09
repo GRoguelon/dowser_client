@@ -24,8 +24,13 @@ defmodule Dowser.MappingCacher do
   `fetch_mapping/2`, which makes it a backend's default mapping source.
 
   A GenServer owns an ETS table; reads go straight to ETS (concurrent,
-  lock-free), and only misses/expired entries go through the GenServer — which
-  de-duplicates concurrent fetches for the same key (single-flight).
+  lock-free), and only misses go through the GenServer — which de-duplicates
+  concurrent fetches for the same key (single-flight).
+
+  An entry is *fresh* for `:ttl`, then *stale* for `:max_stale`, then gone. A
+  stale entry is still served, at once, while the GenServer refreshes it in
+  the background: once a mapping has been fetched, no caller waits for it
+  again, nor fails because a refresh did — see "When a fetch fails".
 
   Entries are keyed by `{endpoint, scope, index}`, so the same index reached
   through different contexts is cached separately, and each fetch honours its
@@ -34,10 +39,24 @@ defmodule Dowser.MappingCacher do
 
   ## Options (`start_link/1`)
 
-    * `:ttl` — entry lifetime in **ms** (default 5 min).
-    * `:sweep_interval` — how often expired entries are actively purged, in ms
-      (default 1 min). `nil`/`0` disables active sweeping; lazy expiration on
-      read still applies.
+    * `:ttl` — how long a fetched entry is fresh, in **ms** (default 5 min).
+    * `:max_stale` — how long, in ms, an entry past its `:ttl` may still be
+      served while it is refreshed (default 1 hour). `:infinity` serves it
+      until a refresh replaces it; `0` turns stale entries off, and an expired
+      entry is a miss its caller waits on. The default rides out a cluster
+      incident a dozen `:ttl`s long, and still bounds how out of date a
+      mapping can get: past it, failing loudly beats casting against a
+      mapping an hour old.
+    * `:refresh_backoff` — how long, in ms, a stale entry whose refresh failed
+      is left alone before a read refreshes it again (default 30 s), never
+      past its `:max_stale`.
+    * `:otp_app` — the prefix of the cacher's telemetry events. Defaults to
+      the application given to `use` (`:dowser_client` for a cacher started
+      without it). It only names the events: a static mapping is still read
+      from the backend's application environment.
+    * `:sweep_interval` — how often entries past `:max_stale` are actively
+      purged, in ms (default 1 min). `nil`/`0` disables active sweeping; lazy
+      expiration on read still applies.
     * `:fetch` — `(context, index -> {:ok, value} | {:error, reason})`, how a
       mapping is loaded on a miss. Defaults to a `Dowser.Client`
       `GET /{index}/_mapping` call.
@@ -66,6 +85,26 @@ defmodule Dowser.MappingCacher do
   fetched"; `fetch/4` is the lenient read that folds both into `nil`. The
   difference matters because the second silently changes the *type* of what a
   caller gets back — see `Dowser.Codec`'s `:mapping_failure`.
+
+  Only a fetch with nothing to fall back on can fail that way: the first one
+  of a key, or one past its `:max_stale`. A *refresh* — the fetch of a stale
+  entry — can't fail a caller, however slow or broken the cluster:
+
+    * nobody waits on it: the stale value has already been returned;
+    * when it fails, the stale value is kept, and so is replied to any caller
+      that was waiting on the same key. It is then left alone for
+      `:refresh_backoff` (30 seconds by default, never past its `:max_stale`)
+      before a read refreshes it again, so that a struggling cluster isn't
+      asked again on every read.
+
+  A refresh that fails is still the cluster misbehaving, so it is reported.
+  Where `:telemetry` is available, it emits `[otp_app, :mapping, :stale]`
+  (`[:dowser_opensearch, :mapping, :stale]` for OpenSearch, unless `:otp_app`
+  says otherwise), with
+  `%{index: index, reason: reason}` as metadata; otherwise it logs a warning.
+
+  `invalidate/3` drops an entry whatever its age, stale value included: the
+  next read fetches it, and waits for it.
   """
 
   use GenServer
@@ -78,7 +117,9 @@ defmodule Dowser.MappingCacher do
 
   @forever :timer.hours(24 * 365 * 100)
   @default_ttl :timer.minutes(5)
+  @default_max_stale :timer.hours(1)
   @default_sweep :timer.minutes(1)
+  @default_refresh_backoff :timer.seconds(30)
   @call_timeout :timer.seconds(15)
 
   # 128 bits: a birthday bound of 2^64 is far past anything a cache key needs,
@@ -105,13 +146,19 @@ defmodule Dowser.MappingCacher do
       """
       @spec child_spec(keyword()) :: Supervisor.child_spec()
       def child_spec(opts) do
-        Dowser.MappingCacher.child_spec(__MODULE__, opts)
+        Dowser.MappingCacher.child_spec(
+          __MODULE__,
+          Keyword.put_new(opts, :otp_app, unquote(otp_app))
+        )
       end
 
       @doc "Starts this cacher; see `Dowser.MappingCacher` for the options."
       @spec start_link(keyword()) :: GenServer.on_start()
       def start_link(opts \\ []) do
-        Dowser.MappingCacher.start_link(__MODULE__, opts)
+        Dowser.MappingCacher.start_link(
+          __MODULE__,
+          Keyword.put_new(opts, :otp_app, unquote(otp_app))
+        )
       end
 
       @doc "The cache key for `{context, index}`; see `Dowser.MappingCacher.key/2`."
@@ -215,15 +262,25 @@ defmodule Dowser.MappingCacher do
   @spec key(Config.t(), term()) :: key()
   def key(%Config{} = context, index), do: {context.endpoint, scope(context), index}
 
-  @doc "Returns the mapping for `{context, index}` from `server`, fetching lazily on a miss."
+  @doc """
+  Returns the mapping for `{context, index}` from `server`, fetching lazily on a
+  miss.
+
+  A stale entry is returned at once, and refreshed in the background.
+  """
   @spec get(atom(), Dowser.Repo.t(), term()) :: {:ok, term()} | {:error, term()}
   def get(server, context, index) do
     with {:ok, resolved} <- Config.resolve(context) do
       key = key(resolved, index)
 
-      # Hot path: read ETS directly, no GenServer involved.
+      # Hot path: read ETS directly, no GenServer involved — and none waited on
+      # for a stale entry, whose refresh is a cast.
       case fresh_lookup(server, key) do
-        {:ok, value} ->
+        {:fresh, value} ->
+          {:ok, value}
+
+        {:stale, value} ->
+          GenServer.cast(server, {:refresh, key, resolved, index})
           {:ok, value}
 
         :miss ->
@@ -323,7 +380,10 @@ defmodule Dowser.MappingCacher do
     end
   end
 
-  @doc "Invalidates a single `{context, index}` entry of `server`."
+  @doc """
+  Invalidates a single `{context, index}` entry of `server`, stale value
+  included: the next read fetches it.
+  """
   @spec invalidate(atom(), Dowser.Repo.t(), term()) :: :ok
   def invalidate(server, context, index) do
     case Config.resolve(context) do
@@ -348,7 +408,10 @@ defmodule Dowser.MappingCacher do
 
     state = %{
       table: server,
+      otp_app: Keyword.get(opts, :otp_app, :dowser_client),
       ttl: to_native(Keyword.get(opts, :ttl, @default_ttl)),
+      max_stale: to_native(Keyword.get(opts, :max_stale, @default_max_stale)),
+      refresh_backoff: to_native(Keyword.get(opts, :refresh_backoff, @default_refresh_backoff)),
       sweep_interval: Keyword.get(opts, :sweep_interval, @default_sweep),
       fetch: Keyword.get(opts, :fetch, &default_fetch/2),
       eager: Keyword.get(opts, :eager, false),
@@ -371,12 +434,17 @@ defmodule Dowser.MappingCacher do
     # Re-check under the GenServer: another caller may have filled it while we
     # were queued.
     case fresh_lookup(state.table, key) do
-      {:ok, value} ->
+      {:fresh, value} ->
         {:reply, {:ok, value}, state}
 
+      {:stale, value} ->
+        {:reply, {:ok, value}, ensure_fetch(state, key, context, index)}
+
       :miss ->
-        state = add_waiter(state, key, from)
-        :ok = maybe_start_fetch(state, key, context, index)
+        state =
+          state
+          |> ensure_fetch(key, context, index)
+          |> add_waiter(key, from)
 
         {:noreply, state}
     end
@@ -385,7 +453,8 @@ defmodule Dowser.MappingCacher do
   # Both receive the repo already resolved: `put/4` and `invalidate/3` resolve
   # it in the caller's process, where a repo that can't be resolved is reported.
   def handle_call({:put, %Config{} = config, index, mapping, ttl}, _from, state) do
-    true = store(state.table, key(config, index), mapping, to_native(ttl))
+    # Never served stale: an entry put by hand isn't a cached answer to refresh.
+    true = store(state.table, key(config, index), mapping, to_native(ttl), 0)
 
     {:reply, :ok, state}
   end
@@ -401,6 +470,19 @@ defmodule Dowser.MappingCacher do
     {:reply, :ok, state}
   end
 
+  # A stale read: refresh the entry unless it already is, or no longer needs
+  # it — it may have been refreshed, or invalidated, since.
+  @impl GenServer
+  def handle_cast({:refresh, key, context, index}, state) do
+    case fresh_lookup(state.table, key) do
+      {:stale, _value} ->
+        {:noreply, ensure_fetch(state, key, context, index)}
+
+      _fresh_or_gone ->
+        {:noreply, state}
+    end
+  end
+
   # A single-flight fetch finished: store it, reply to every waiter.
   @impl GenServer
   def handle_info({:fetched, key, result}, state) do
@@ -409,21 +491,21 @@ defmodule Dowser.MappingCacher do
     reply =
       case result do
         {:ok, value} ->
-          store(state.table, key, value, state.ttl)
+          store(state.table, key, value, state.ttl, state.max_stale)
           {:ok, value}
 
-        {:error, _reason} = error ->
-          error
+        {:error, reason} = error ->
+          fall_back(state, key, reason, error)
       end
 
     Enum.each(waiters, &GenServer.reply(&1, reply))
     {:noreply, %{state | inflight: inflight}}
   end
 
-  # Active expiration.
+  # Active expiration, of entries past their stale horizon.
   def handle_info(:sweep, state) do
     now = System.monotonic_time()
-    :ets.select_delete(state.table, [{{:_, :_, :"$1"}, [{:"=<", :"$1", now}], [true]}])
+    :ets.select_delete(state.table, [{{:_, :_, :_, :"$1"}, [{:"=<", :"$1", now}], [true]}])
     :ok = schedule_sweep(state.sweep_interval)
     {:noreply, state}
   end
@@ -480,12 +562,14 @@ defmodule Dowser.MappingCacher do
 
   defp fresh_lookup(table, key) do
     case :ets.lookup(table, key) do
-      [{^key, value, expires_at}] ->
-        # Lazy expiration: an entry past its deadline reads as a miss.
-        if expires_at > System.monotonic_time() do
-          {:ok, value}
-        else
-          :miss
+      [{^key, value, expires_at, stale_until}] ->
+        # Lazy expiration: an entry past its stale horizon reads as a miss.
+        now = System.monotonic_time()
+
+        cond do
+          expires_at > now -> {:fresh, value}
+          stale_until > now -> {:stale, value}
+          true -> :miss
         end
 
       [] ->
@@ -496,18 +580,18 @@ defmodule Dowser.MappingCacher do
   ## Single-flight
 
   defp add_waiter(state, key, from),
-    do: %{state | inflight: Map.update(state.inflight, key, [from], &[from | &1])}
-
-  defp first_waiter?(state, key), do: length(Map.fetch!(state.inflight, key)) == 1
+    do: %{state | inflight: Map.update!(state.inflight, key, &[from | &1])}
 
   # Fetch off the GenServer so it stays responsive to other keys' misses.
-  # Only the first caller waiting on a key starts its fetch; the others are
-  # replied to when it lands.
-  defp maybe_start_fetch(state, key, context, index) do
-    if first_waiter?(state, key) do
-      start_fetch(state.fetch, key, context, index)
+  # A key is fetched once at a time, whoever asks — a waiting caller or a
+  # stale read, which waits on nothing — and its waiters are replied to when
+  # it lands.
+  defp ensure_fetch(state, key, context, index) do
+    if Map.has_key?(state.inflight, key) do
+      state
     else
-      :ok
+      :ok = start_fetch(state.fetch, key, context, index)
+      %{state | inflight: Map.put(state.inflight, key, [])}
     end
   end
 
@@ -528,10 +612,49 @@ defmodule Dowser.MappingCacher do
       {:error, {kind, reason}}
   end
 
+  # A failed fetch is an error only with nothing to fall back on. A stale value
+  # is kept, and left alone for a while, so that a struggling cluster isn't
+  # asked again on every read.
+  defp fall_back(state, key, reason, error) do
+    case fresh_lookup(state.table, key) do
+      {:stale, value} ->
+        [{^key, _value, _expires_at, stale_until}] = :ets.lookup(state.table, key)
+        retry_at = min(System.monotonic_time() + state.refresh_backoff, stale_until)
+        true = :ets.update_element(state.table, key, {3, retry_at})
+
+        :ok = report_stale(state.otp_app, key, reason)
+        {:ok, value}
+
+      _fresh_or_gone ->
+        error
+    end
+  end
+
+  # `:telemetry` is an optional dependency, as in `Dowser.Codec`: the event
+  # is emitted for the applications that have it, and the others get a log.
+  if Code.ensure_loaded?(:telemetry) do
+    defp report_stale(otp_app, {_endpoint, _scope, index}, reason) do
+      metadata = %{index: index, reason: reason}
+      :telemetry.execute([otp_app, :mapping, :stale], %{count: 1}, metadata)
+    end
+  else
+    defp report_stale(_otp_app, {_endpoint, _scope, index}, reason) do
+      Logger.warning(
+        "MappingCacher refresh failed for #{inspect(index)}, serving its stale mapping: " <>
+          inspect(reason)
+      )
+    end
+  end
+
   ## Storage / TTL
 
-  defp store(table, key, value, ttl),
-    do: :ets.insert(table, {key, value, System.monotonic_time() + ttl})
+  # Each entry carries both its deadlines — fresh until `expires_at`, stale
+  # until `stale_until` — so that a read tells the three states apart from
+  # the one row, in two integer comparisons.
+  defp store(table, key, value, ttl, max_stale) do
+    expires_at = System.monotonic_time() + ttl
+    :ets.insert(table, {key, value, expires_at, expires_at + max_stale})
+  end
 
   # An entry that never expires still carries a deadline, so the sweep and the
   # lazy check stay one comparison rather than two shapes.
@@ -561,7 +684,7 @@ defmodule Dowser.MappingCacher do
     )
     |> Enum.each(fn
       {:ok, {_index, {:ok, key, value}}} ->
-        store(state.table, key, value, state.ttl)
+        store(state.table, key, value, state.ttl, state.max_stale)
 
       {:ok, {index, {:error, reason}}} ->
         log_warm(index, reason)

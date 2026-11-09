@@ -96,6 +96,11 @@ defmodule Dowser.Codec do
     * `:warn` — log a warning and cast to identity.
     * `:ignore` — cast to identity, silently.
 
+  A `Dowser.MappingCacher` only gets there for a mapping it has nothing to
+  fall back on: one it has never fetched, or one past its `:max_stale`. An
+  expired mapping is served stale while it is refreshed, and a refresh that
+  fails doesn't fail the request.
+
   Where `:telemetry` is available — an optional dependency, so only if your
   application already pulls it in — every failed fetch also emits
   `[otp_app, :mapping, :failure]` (`[:dowser_opensearch, :mapping, :failure]`
